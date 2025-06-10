@@ -1,9 +1,10 @@
 # whatsapp_bot.py
 """
-Bot de automatización para WhatsApp Web
-Utiliza Selenium para controlar WhatsApp Web y enviar mensajes automáticamente
-a números específicos con mensajes aleatorios de una lista predefinida.
-Incluye manejo robusto de perfiles de Chrome y gestión de errores avanzada.
+Bot de automatización para WhatsApp Web mejorado
+Utiliza Selenium para controlar WhatsApp Web y enviar mensajes automáticamente.
+El bot envía UN mensaje aleatorio a cada número de la lista, una sola vez por sesión.
+Incluye detección robusta de cierre de Chrome y mejor control de automatización.
+Maneja correctamente múltiples ejecuciones y reconexiones de Chrome.
 """
 
 import time
@@ -13,14 +14,15 @@ import os
 import tempfile
 import shutil
 import uuid
-from typing import List, Callable, Optional
+from typing import List, Callable, Optional, Set
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
-from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException
+from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException, \
+    InvalidSessionIdException
 
 
 class ChromeProfileManager:
@@ -99,6 +101,7 @@ class ChromeProfileManager:
 class WhatsAppBot:
     """
     Bot para automatizar el envío de mensajes en WhatsApp Web
+    Envía un mensaje único a cada número de la lista
     """
 
     def __init__(self, status_callback: Optional[Callable] = None):
@@ -115,6 +118,15 @@ class WhatsAppBot:
         self.wait_time = 10
         self.profile_manager = ChromeProfileManager()
         self.automation_thread = None
+
+        # Control de números enviados
+        self.sent_numbers: Set[str] = set()
+        self.total_numbers = 0
+        self.messages_sent = 0
+
+        # Control de estado del navegador
+        self.browser_closed = False
+        self.session_active = False
 
     def _update_status(self, message: str):
         """
@@ -147,18 +159,57 @@ class WhatsAppBot:
             # Ignorar errores de limpieza
             pass
 
-    def setup_driver(self) -> bool:
+    def _is_browser_alive(self) -> bool:
         """
-        Configura e inicializa el driver de Chrome
+        Verifica si el navegador sigue activo
 
         Returns:
-            True si se configuró correctamente
+            True si el navegador está activo
         """
         try:
-            self._update_status("Configurando navegador...")
+            if not self.driver:
+                return False
 
-            # Limpiar procesos existentes si es necesario
+            # Intentar ejecutar un comando simple
+            self.driver.current_url
+            return True
+        except (WebDriverException, InvalidSessionIdException):
+            self.browser_closed = True
+            self.session_active = False
+            return False
+        except Exception:
+            return False
+
+    def _force_close_driver(self):
+        """
+        Fuerza el cierre del driver y limpia la sesión
+        """
+        if self.driver:
+            try:
+                self.driver.quit()
+            except:
+                pass
+            finally:
+                self.driver = None
+                self.session_active = False
+                self.browser_closed = False
+
+    def _create_new_driver(self) -> bool:
+        """
+        Crea un nuevo driver de Chrome
+
+        Returns:
+            True si se creó correctamente
+        """
+        try:
+            # Cerrar driver existente si hay uno
+            self._force_close_driver()
+
+            # Limpiar procesos previos
             self._cleanup_existing_processes()
+
+            # Esperar un momento para que se liberen los recursos
+            time.sleep(2)
 
             # Obtener ruta de perfil
             profile_path = self.profile_manager.create_profile_path()
@@ -171,7 +222,6 @@ class WhatsAppBot:
             chrome_options.add_argument("--disable-extensions")
             chrome_options.add_argument("--disable-plugins")
             chrome_options.add_argument("--disable-images")
-            chrome_options.add_argument("--disable-javascript")
             chrome_options.add_argument("--window-size=1200,800")
             chrome_options.add_argument("--disable-blink-features=AutomationControlled")
             chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
@@ -195,60 +245,44 @@ class WhatsAppBot:
             # Ejecutar script para ocultar que es un bot
             self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
 
-            self._update_status("Navegador configurado correctamente")
+            self.browser_closed = False
+            self.session_active = True
             return True
 
-        except WebDriverException as e:
-            error_msg = str(e)
-            if "user data directory" in error_msg.lower():
-                self._update_status("Error: Directorio de perfil en uso. Creando perfil temporal...")
-                try:
-                    # Forzar creación de perfil temporal
-                    temp_dir = tempfile.mkdtemp(prefix=f"whatsapp_bot_{uuid.uuid4().hex[:8]}_")
-                    self.profile_manager.profile_path = temp_dir
-                    self.profile_manager.temp_profile = True
-
-                    # Intentar nuevamente
-                    return self._retry_setup_driver(temp_dir)
-                except Exception as retry_error:
-                    self._update_status(f"Error en reintento: {retry_error}")
-                    return False
-            else:
-                self._update_status(f"Error al configurar el navegador: {e}")
-                return False
         except Exception as e:
-            self._update_status(f"Error inesperado: {e}")
+            self._update_status(f"Error al crear nuevo driver: {e}")
             return False
 
-    def _retry_setup_driver(self, temp_profile_path: str) -> bool:
+    def setup_driver(self) -> bool:
         """
-        Reintenta configurar el driver con un perfil temporal
-
-        Args:
-            temp_profile_path: Ruta del perfil temporal
+        Configura e inicializa el driver de Chrome
 
         Returns:
             True si se configuró correctamente
         """
         try:
-            chrome_options = Options()
-            chrome_options.add_argument("--no-sandbox")
-            chrome_options.add_argument("--disable-dev-shm-usage")
-            chrome_options.add_argument("--disable-gpu")
-            chrome_options.add_argument("--window-size=1200,800")
-            chrome_options.add_argument(f"--user-data-dir={temp_profile_path}")
-            chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-            chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+            self._update_status("Configurando navegador...")
 
-            self.driver = webdriver.Chrome(options=chrome_options)
-            self.driver.implicitly_wait(self.wait_time)
+            # Si ya hay un driver pero la sesión no está activa, crear uno nuevo
+            if self.driver and not self.session_active:
+                self._update_status("Sesión anterior cerrada, creando nueva...")
+                return self._create_new_driver()
 
-            self._update_status("Navegador configurado con perfil temporal")
-            return True
+            # Si no hay driver, crear uno nuevo
+            if not self.driver:
+                return self._create_new_driver()
+
+            # Si el driver existe y parece activo, verificarlo
+            if self._is_browser_alive():
+                self._update_status("Reutilizando navegador existente")
+                return True
+            else:
+                self._update_status("Navegador existente no responde, creando nuevo...")
+                return self._create_new_driver()
 
         except Exception as e:
-            self._update_status(f"Error en reintento de configuración: {e}")
-            return False
+            self._update_status(f"Error al configurar navegador: {e}")
+            return self._create_new_driver()
 
     def open_whatsapp(self) -> bool:
         """
@@ -258,9 +292,9 @@ class WhatsAppBot:
             True si se abrió correctamente
         """
         try:
-            if not self.driver:
-                if not self.setup_driver():
-                    return False
+            # Asegurar que tenemos un driver activo
+            if not self.setup_driver():
+                return False
 
             self._update_status("Abriendo WhatsApp Web...")
             self.driver.get("https://web.whatsapp.com")
@@ -342,6 +376,10 @@ class WhatsAppBot:
                 self._update_status(f"Error verificando estado: {e}")
                 return False
 
+        except InvalidSessionIdException:
+            self._update_status("Sesión inválida, creando nueva...")
+            self.session_active = False
+            return self.setup_driver() and self.open_whatsapp()
         except Exception as e:
             self._update_status(f"Error al abrir WhatsApp Web: {e}")
             return False
@@ -358,16 +396,22 @@ class WhatsAppBot:
             True si se envió correctamente
         """
         try:
-            if not self.driver:
-                self._update_status("Error: Navegador no inicializado")
+            # Verificar si el navegador sigue activo
+            if not self._is_browser_alive():
+                self._update_status("Error: El navegador se ha cerrado")
                 return False
 
             # Crear URL directa al chat
             url = f"https://web.whatsapp.com/send?phone={number}"
-            self._update_status(f"Abriendo chat con {number}")
+            self._update_status(f"Enviando mensaje a {number}")
 
             self.driver.get(url)
             time.sleep(3)  # Esperar a que cargue
+
+            # Verificar nuevamente si el navegador sigue activo
+            if not self._is_browser_alive():
+                self._update_status("Error: El navegador se cerró durante el envío")
+                return False
 
             # Esperar a que cargue el chat
             wait = WebDriverWait(self.driver, 20)
@@ -426,11 +470,21 @@ class WhatsAppBot:
             # Esperar un momento para confirmar el envío
             time.sleep(3)
 
-            self._update_status(f"Mensaje enviado a {number}")
+            # Verificar una vez más si el navegador sigue activo
+            if not self._is_browser_alive():
+                self._update_status("Advertencia: El navegador se cerró después del envío")
+                return False
+
+            self._update_status(f"✓ Mensaje enviado a {number}")
             return True
 
         except TimeoutException:
             self._update_status(f"Timeout al enviar mensaje a {number}")
+            return False
+        except (WebDriverException, InvalidSessionIdException):
+            self._update_status(f"Error: El navegador se cerró durante el envío a {number}")
+            self.browser_closed = True
+            self.session_active = False
             return False
         except Exception as e:
             self._update_status(f"Error al enviar mensaje a {number}: {e}")
@@ -440,6 +494,7 @@ class WhatsAppBot:
                          interval_min: int = 30, interval_max: int = 60):
         """
         Inicia la automatización de envío de mensajes
+        Envía UN mensaje a cada número de la lista
 
         Args:
             numbers: Lista de números de teléfono
@@ -455,6 +510,12 @@ class WhatsAppBot:
             self._update_status("La automatización ya está en ejecución")
             return
 
+        # Reiniciar control de envíos
+        self.sent_numbers.clear()
+        self.total_numbers = len(numbers)
+        self.messages_sent = 0
+        self.browser_closed = False
+
         # Iniciar en un hilo separado
         self.automation_thread = threading.Thread(
             target=self._automation_loop,
@@ -467,6 +528,7 @@ class WhatsAppBot:
                          interval_min: int, interval_max: int):
         """
         Bucle principal de automatización
+        Envía un mensaje único a cada número
 
         Args:
             numbers: Lista de números
@@ -483,32 +545,64 @@ class WhatsAppBot:
                 self._update_status("Error: No se pudo inicializar WhatsApp Web")
                 return
 
-            self._update_status("Automatización iniciada")
-            sent_count = 0
+            self._update_status(f"Automatización iniciada - Enviando a {self.total_numbers} números")
 
-            while not self.should_stop and numbers and messages:
-                # Seleccionar número y mensaje aleatorio
-                number = random.choice(numbers)
+            # Crear una copia de la lista para iterar
+            numbers_to_send = numbers.copy()
+            random.shuffle(numbers_to_send)  # Mezclar orden para mayor naturalidad
+
+            for number in numbers_to_send:
+                # Verificar si se debe detener
+                if self.should_stop:
+                    self._update_status("Automatización detenida por el usuario")
+                    break
+
+                # Verificar si el navegador sigue activo
+                if self.browser_closed or not self._is_browser_alive():
+                    self._update_status("Automatización detenida: El navegador se ha cerrado")
+                    break
+
+                # Verificar si ya se envió a este número
+                if number in self.sent_numbers:
+                    continue
+
+                # Seleccionar mensaje aleatorio
                 message = random.choice(messages)
 
                 # Enviar mensaje
                 if self.send_message_to_number(number, message):
-                    sent_count += 1
-                    self._update_status(f"Mensajes enviados: {sent_count}")
+                    self.sent_numbers.add(number)
+                    self.messages_sent += 1
+
+                    progress = f"Progreso: {self.messages_sent}/{self.total_numbers}"
+                    self._update_status(progress)
+
+                    # Si ya se enviaron todos los mensajes, terminar
+                    if self.messages_sent >= self.total_numbers:
+                        self._update_status("✓ Todos los mensajes han sido enviados")
+                        break
 
                     # Calcular tiempo de espera aleatorio
                     wait_time = random.randint(interval_min, interval_max)
                     self._update_status(f"Esperando {wait_time} segundos hasta el próximo mensaje...")
 
                     # Esperar con posibilidad de interrumpir
-                    for _ in range(wait_time):
-                        if self.should_stop:
+                    for second in range(wait_time):
+                        if self.should_stop or self.browser_closed or not self._is_browser_alive():
                             break
                         time.sleep(1)
+
+                        # Mostrar countdown cada 10 segundos
+                        remaining = wait_time - second - 1
+                        if remaining > 0 and remaining % 10 == 0:
+                            self._update_status(f"Esperando... {remaining} segundos restantes")
+
                 else:
-                    self._update_status("Error al enviar mensaje, esperando 10 segundos...")
-                    for _ in range(10):
-                        if self.should_stop:
+                    self._update_status(f"Error al enviar mensaje a {number}, continuando con el siguiente...")
+
+                    # Esperar menos tiempo en caso de error
+                    for _ in range(5):
+                        if self.should_stop or self.browser_closed:
                             break
                         time.sleep(1)
 
@@ -517,39 +611,78 @@ class WhatsAppBot:
 
         finally:
             self.is_running = False
-            self._update_status("Automatización detenida")
+            completion_msg = f"Automatización finalizada - Mensajes enviados: {self.messages_sent}/{self.total_numbers}"
+            self._update_status(completion_msg)
 
     def stop_automation(self):
         """
-        Detiene la automatización
+        Detiene la automatización de forma robusta
         """
         if self.is_running:
             self._update_status("Deteniendo automatización...")
             self.should_stop = True
 
-            # Esperar a que termine el hilo
+            # Esperar a que termine el hilo con timeout
             if self.automation_thread and self.automation_thread.is_alive():
-                self.automation_thread.join(timeout=5)
+                # Dar tiempo para que termine naturalmente
+                self.automation_thread.join(timeout=10)
+
+                # Si sigue vivo después del timeout, forzar parada
+                if self.automation_thread.is_alive():
+                    self._update_status("Forzando detención de automatización...")
+                    self.is_running = False
         else:
             self._update_status("La automatización no está en ejecución")
 
+    def reset_session(self):
+        """
+        Reinicia la sesión del navegador completamente
+        """
+        self._update_status("Reiniciando sesión del navegador...")
+        self.stop_automation()
+        self._force_close_driver()
+        time.sleep(2)
+        self.sent_numbers.clear()
+        self.messages_sent = 0
+        self.total_numbers = 0
+
+    def get_automation_stats(self) -> dict:
+        """
+        Obtiene estadísticas de la automatización actual
+
+        Returns:
+            Diccionario con estadísticas
+        """
+        return {
+            'total_numbers': self.total_numbers,
+            'messages_sent': self.messages_sent,
+            'remaining': self.total_numbers - self.messages_sent,
+            'is_running': self.is_running,
+            'browser_active': self._is_browser_alive(),
+            'session_active': self.session_active
+        }
+
     def close(self):
         """
-        Cierra el bot y limpia recursos
+        Cierra el bot y limpia recursos de forma robusta
         """
+        self._update_status("Cerrando bot...")
+
+        # Detener automatización si está activa
         self.stop_automation()
 
-        if self.driver:
-            try:
-                self.driver.quit()
-                self._update_status("Navegador cerrado")
-            except Exception as e:
-                self._update_status(f"Error al cerrar navegador: {e}")
-            finally:
-                self.driver = None
+        # Cerrar navegador
+        self._force_close_driver()
 
         # Limpiar perfil temporal
         self.profile_manager.cleanup()
+
+        # Reiniciar estado
+        self.browser_closed = False
+        self.session_active = False
+        self.sent_numbers.clear()
+        self.total_numbers = 0
+        self.messages_sent = 0
 
     def is_active(self) -> bool:
         """
@@ -558,4 +691,4 @@ class WhatsAppBot:
         Returns:
             True si está activa
         """
-        return self.is_running
+        return self.is_running and self._is_browser_alive()
