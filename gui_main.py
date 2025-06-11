@@ -12,7 +12,7 @@ from data_manager import DataManager
 from whatsapp_bot import WhatsAppBot
 from gui_styles import StyleManager
 from gui_components import NavigationSidebar
-from gui_tabs import TabManager
+from gui_tab_manager import TabManager
 
 
 class WhatsAppBotGUI:
@@ -75,7 +75,7 @@ class WhatsAppBotGUI:
         self.content_area = self.style_manager.create_styled_frame(self.main_frame)
         self.content_area.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 
-        # Gestor de pestañas
+        # Gestor de pestañas (ahora usando el nuevo TabManager modularizado)
         self.tab_manager = TabManager(
             self.content_area,
             self.style_manager,
