@@ -7,7 +7,7 @@ que permite automatizar el envío de mensajes a través de WhatsApp Web
 
 import sys
 import os
-from gui import WhatsAppBotGUI
+from gui_main import WhatsAppBotGUI
 
 def main():
     """
