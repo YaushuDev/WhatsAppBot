@@ -2,7 +2,7 @@
 """
 Gestor de estilos y configuración visual para el Bot de WhatsApp
 Centraliza toda la configuración de colores, estilos y temas de la interfaz gráfica,
-proporcionando un tema nocturno consistente y métodos para aplicar estilos a widgets
+proporcionando un tema moderno con paleta verde armónica y diseño mejorado
 """
 
 import tkinter as tk
@@ -16,33 +16,46 @@ class StyleManager:
 
     def __init__(self):
         """
-        Inicializa el gestor de estilos con el tema nocturno
+        Inicializa el gestor de estilos con paleta verde armónica
         """
-        # Paleta de colores del tema nocturno
+        # Paleta de colores verde armónica y moderna
         self.colors = {
-            "bg_primary": "#1e1e1e",      # Fondo principal
-            "bg_secondary": "#2d2d2d",    # Fondo secundario
-            "bg_accent": "#3d3d3d",       # Fondo de acento
-            "text_primary": "#ffffff",     # Texto principal
-            "text_secondary": "#cccccc",   # Texto secundario
-            "accent": "#0078d4",          # Color de acento azul
-            "accent_hover": "#106ebe",    # Color de acento hover
-            "success": "#107c10",         # Verde éxito
-            "warning": "#ff8c00",         # Naranja advertencia
-            "error": "#d13438",           # Rojo error
-            "border": "#404040"           # Borde
+            "bg_primary": "#0d1117",  # Fondo principal - negro azulado muy oscuro
+            "bg_secondary": "#161b22",  # Fondo secundario - gris muy oscuro
+            "bg_accent": "#21262d",  # Fondo de acento - gris oscuro
+            "bg_card": "#1c2128",  # Fondo de tarjetas
+            "text_primary": "#f0f6fc",  # Texto principal - blanco suave
+            "text_secondary": "#8b949e",  # Texto secundario - gris claro
+            "text_muted": "#6e7681",  # Texto silenciado
+            "accent": "#238636",  # Verde principal - más suave
+            "accent_light": "#2ea043",  # Verde claro
+            "accent_dark": "#1a7f37",  # Verde oscuro
+            "success": "#2da44e",  # Verde éxito
+            "warning": "#fb8500",  # Naranja advertencia - más suave
+            "error": "#da3633",  # Rojo error - más suave
+            "border": "#30363d",  # Borde principal
+            "border_light": "#21262d",  # Borde suave
+            "hover": "#262c36"  # Color hover
         }
 
-        # Configuración de fuentes
+        # Configuración de fuentes mejorada
         self.fonts = {
-            "title": ("Segoe UI", 18, "bold"),
+            "title": ("Segoe UI", 20, "bold"),
             "subtitle": ("Segoe UI", 16, "bold"),
-            "heading": ("Segoe UI", 12, "bold"),
+            "heading": ("Segoe UI", 13, "bold"),
             "normal": ("Segoe UI", 10),
-            "button": ("Segoe UI", 11),
-            "button_large": ("Segoe UI", 12, "bold"),
+            "button": ("Segoe UI", 10, "bold"),
+            "button_large": ("Segoe UI", 11, "bold"),
             "small": ("Segoe UI", 9),
             "console": ("Consolas", 9)
+        }
+
+        # Configuración de espaciado
+        self.spacing = {
+            "small": 5,
+            "medium": 10,
+            "large": 20,
+            "xlarge": 30
         }
 
     def setup_ttk_styles(self):
@@ -60,28 +73,31 @@ class StyleManager:
                         background=self.colors["bg_secondary"],
                         foreground=self.colors["text_primary"],
                         borderwidth=0,
-                        focuscolor='none')
+                        focuscolor='none',
+                        padding=(15, 12))
         style.map("SidebarButton.TButton",
-                  background=[('active', self.colors["bg_accent"])])
+                  background=[('active', self.colors["hover"])])
 
         style.configure("ActiveSidebarButton.TButton",
                         background=self.colors["accent"],
                         foreground=self.colors["text_primary"],
                         borderwidth=0,
-                        focuscolor='none')
+                        focuscolor='none',
+                        padding=(15, 12))
 
         # Estilos para botones de acción
         style.configure("Action.TButton",
                         background=self.colors["accent"],
                         foreground=self.colors["text_primary"],
                         borderwidth=1,
-                        focuscolor='none')
+                        focuscolor='none',
+                        padding=(10, 8))
         style.map("Action.TButton",
-                  background=[('active', self.colors["accent_hover"])])
+                  background=[('active', self.colors["accent_light"])])
 
     def create_styled_button(self, parent, text, command=None, style="normal", **kwargs):
         """
-        Crea un botón con estilo personalizado
+        Crea un botón con estilo personalizado mejorado
 
         Args:
             parent: Widget padre
@@ -96,36 +112,43 @@ class StyleManager:
         # Configuraciones de estilo por tipo
         style_configs = {
             "normal": {
-                "bg": self.colors["bg_secondary"],
-                "fg": self.colors["text_primary"]
+                "bg": self.colors["bg_accent"],
+                "fg": self.colors["text_primary"],
+                "activebackground": self.colors["hover"]
             },
             "accent": {
                 "bg": self.colors["accent"],
-                "fg": self.colors["text_primary"]
+                "fg": self.colors["text_primary"],
+                "activebackground": self.colors["accent_light"]
             },
             "success": {
                 "bg": self.colors["success"],
-                "fg": self.colors["text_primary"]
+                "fg": self.colors["text_primary"],
+                "activebackground": self.colors["accent_light"]
             },
             "warning": {
                 "bg": self.colors["warning"],
-                "fg": self.colors["text_primary"]
+                "fg": self.colors["text_primary"],
+                "activebackground": "#ffb347"
             },
             "error": {
                 "bg": self.colors["error"],
-                "fg": self.colors["text_primary"]
+                "fg": self.colors["text_primary"],
+                "activebackground": "#ff6b6b"
             }
         }
 
         config = style_configs.get(style, style_configs["normal"])
 
-        # Configuración base del botón
+        # Configuración base del botón mejorada
         button_config = {
             "font": self.fonts["button"],
             "border": 0,
             "cursor": "hand2",
-            "pady": 8,
-            "padx": 15,
+            "pady": 10,
+            "padx": 20,
+            "relief": "flat",
+            "bd": 0,
             **config,
             **kwargs
         }
@@ -133,11 +156,16 @@ class StyleManager:
         if command:
             button_config["command"] = command
 
-        return tk.Button(parent, text=text, **button_config)
+        button = tk.Button(parent, text=text, **button_config)
+
+        # Agregar efecto hover
+        self._add_hover_effect(button, config["activebackground"], config["bg"])
+
+        return button
 
     def create_styled_label(self, parent, text, style="normal", **kwargs):
         """
-        Crea una etiqueta con estilo personalizado
+        Crea una etiqueta con estilo personalizado mejorado
 
         Args:
             parent: Widget padre
@@ -156,7 +184,7 @@ class StyleManager:
             },
             "subtitle": {
                 "font": self.fonts["subtitle"],
-                "fg": self.colors["text_primary"]
+                "fg": self.colors["accent_light"]
             },
             "heading": {
                 "font": self.fonts["heading"],
@@ -173,6 +201,10 @@ class StyleManager:
             "secondary": {
                 "font": self.fonts["normal"],
                 "fg": self.colors["text_secondary"]
+            },
+            "muted": {
+                "font": self.fonts["small"],
+                "fg": self.colors["text_muted"]
             }
         }
 
@@ -189,7 +221,7 @@ class StyleManager:
 
     def create_styled_entry(self, parent, **kwargs):
         """
-        Crea un campo de entrada con estilo personalizado
+        Crea un campo de entrada con estilo personalizado mejorado
 
         Args:
             parent: Widget padre
@@ -200,10 +232,15 @@ class StyleManager:
         """
         entry_config = {
             "font": self.fonts["normal"],
-            "bg": self.colors["bg_secondary"],
+            "bg": self.colors["bg_card"],
             "fg": self.colors["text_primary"],
             "border": 1,
             "relief": "solid",
+            "borderwidth": 1,
+            "highlightthickness": 1,
+            "highlightcolor": self.colors["accent"],
+            "highlightbackground": self.colors["border"],
+            "insertbackground": self.colors["text_primary"],
             **kwargs
         }
 
@@ -211,7 +248,7 @@ class StyleManager:
 
     def create_styled_listbox(self, parent, **kwargs):
         """
-        Crea una listbox con estilo personalizado
+        Crea una listbox con estilo personalizado mejorado
 
         Args:
             parent: Widget padre
@@ -222,11 +259,15 @@ class StyleManager:
         """
         listbox_config = {
             "font": self.fonts["normal"],
-            "bg": self.colors["bg_secondary"],
+            "bg": self.colors["bg_card"],
             "fg": self.colors["text_primary"],
             "selectbackground": self.colors["accent"],
+            "selectforeground": self.colors["text_primary"],
             "border": 1,
             "relief": "solid",
+            "borderwidth": 1,
+            "highlightthickness": 0,
+            "activestyle": "none",
             **kwargs
         }
 
@@ -234,11 +275,11 @@ class StyleManager:
 
     def create_styled_frame(self, parent, style="primary", **kwargs):
         """
-        Crea un frame con estilo personalizado
+        Crea un frame con estilo personalizado mejorado
 
         Args:
             parent: Widget padre
-            style: Tipo de estilo (primary, secondary, accent)
+            style: Tipo de estilo (primary, secondary, accent, card)
             **kwargs: Argumentos adicionales
 
         Returns:
@@ -248,12 +289,15 @@ class StyleManager:
         style_configs = {
             "primary": {"bg": self.colors["bg_primary"]},
             "secondary": {"bg": self.colors["bg_secondary"]},
-            "accent": {"bg": self.colors["bg_accent"]}
+            "accent": {"bg": self.colors["bg_accent"]},
+            "card": {"bg": self.colors["bg_card"]}
         }
 
         config = style_configs.get(style, style_configs["primary"])
 
         frame_config = {
+            "relief": "flat",
+            "bd": 0,
             **config,
             **kwargs
         }
@@ -262,7 +306,7 @@ class StyleManager:
 
     def create_styled_labelframe(self, parent, text, **kwargs):
         """
-        Crea un LabelFrame con estilo personalizado
+        Crea un LabelFrame con estilo personalizado mejorado
 
         Args:
             parent: Widget padre
@@ -276,17 +320,20 @@ class StyleManager:
             "text": text,
             "font": self.fonts["heading"],
             "bg": self.colors["bg_primary"],
-            "fg": self.colors["text_primary"],
+            "fg": self.colors["accent_light"],
             "border": 1,
             "relief": "solid",
+            "bd": 1,
+            "highlightthickness": 0,
+            "labelanchor": "nw",
             **kwargs
         }
 
         return tk.LabelFrame(parent, **labelframe_config)
 
-    def configure_window(self, window, title="Bot de WhatsApp", size="900x600", icon_path="icon.ico"):
+    def configure_window(self, window, title="Bot de WhatsApp", size="950x650", icon_path="icon.ico"):
         """
-        Configura una ventana con el estilo del tema
+        Configura una ventana con el estilo del tema mejorado
 
         Args:
             window: Ventana a configurar
@@ -305,24 +352,43 @@ class StyleManager:
         except:
             pass  # Si no existe el icono, continúa sin él
 
-    def apply_hover_effect(self, widget, hover_color=None):
+        # Centrar ventana en pantalla
+        window.update_idletasks()
+        width = window.winfo_width()
+        height = window.winfo_height()
+        x = (window.winfo_screenwidth() // 2) - (width // 2)
+        y = (window.winfo_screenheight() // 2) - (height // 2)
+        window.geometry(f"{width}x{height}+{x}+{y}")
+
+    def _add_hover_effect(self, widget, hover_color, normal_color):
         """
         Aplica efecto hover a un widget
+
+        Args:
+            widget: Widget al que aplicar el efecto
+            hover_color: Color cuando se hace hover
+            normal_color: Color normal
+        """
+
+        def on_enter(event):
+            widget.configure(bg=hover_color)
+
+        def on_leave(event):
+            widget.configure(bg=normal_color)
+
+        widget.bind("<Enter>", on_enter)
+        widget.bind("<Leave>", on_leave)
+
+    def apply_hover_effect(self, widget, hover_color=None):
+        """
+        Aplica efecto hover a un widget (método público)
 
         Args:
             widget: Widget al que aplicar el efecto
             hover_color: Color cuando se hace hover (opcional)
         """
         if hover_color is None:
-            hover_color = self.colors["accent_hover"]
+            hover_color = self.colors["hover"]
 
         original_color = widget.cget("bg")
-
-        def on_enter(event):
-            widget.configure(bg=hover_color)
-
-        def on_leave(event):
-            widget.configure(bg=original_color)
-
-        widget.bind("<Enter>", on_enter)
-        widget.bind("<Leave>", on_leave)
+        self._add_hover_effect(widget, hover_color, original_color)

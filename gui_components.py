@@ -2,7 +2,7 @@
 """
 Componentes reutilizables para el Bot de WhatsApp
 Contiene widgets personalizados y layouts comunes que se utilizan
-en múltiples partes de la interfaz, reduciendo la duplicación de código
+en múltiples partes de la interfaz, con diseño mejorado y disposición optimizada
 """
 
 import tkinter as tk
@@ -12,7 +12,7 @@ from gui_styles import StyleManager
 
 class NavigationSidebar:
     """
-    Barra lateral de navegación con botones y estado
+    Barra lateral de navegación con diseño mejorado
     """
 
     def __init__(self, parent, style_manager: StyleManager, tab_callback):
@@ -28,92 +28,152 @@ class NavigationSidebar:
         self.tab_callback = tab_callback
         self.nav_buttons = {}
 
-        # Crear frame principal de la sidebar
+        # Crear frame principal de la sidebar con ancho mejorado
         self.sidebar = style_manager.create_styled_frame(parent, "secondary")
-        self.sidebar.configure(width=200)
-        self.sidebar.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 1))
+        self.sidebar.configure(width=220)
+        self.sidebar.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 2))
         self.sidebar.pack_propagate(False)
 
         self._create_elements()
 
     def _create_elements(self):
         """
-        Crea los elementos de la barra lateral
+        Crea los elementos de la barra lateral con mejor disposición
         """
-        # Título
+        # Contenedor principal con padding mejorado
+        main_container = self.style_manager.create_styled_frame(self.sidebar, "secondary")
+        main_container.pack(fill=tk.BOTH, expand=True, padx=15, pady=20)
+
+        # Título con mejor espaciado
         title_label = self.style_manager.create_styled_label(
-            self.sidebar,
+            main_container,
             "WhatsApp Bot",
             "subtitle"
         )
         title_label.configure(bg=self.style_manager.colors["bg_secondary"])
-        title_label.pack(pady=(20, 30))
+        title_label.pack(pady=(0, 35))
 
-        # Botones de navegación
+        # Contenedor para botones de navegación
+        nav_container = self.style_manager.create_styled_frame(main_container, "secondary")
+        nav_container.pack(fill=tk.X, pady=(0, 20))
+
+        # Botones de navegación con mejor diseño
         nav_items = [
-            ("numeros", "📱 Números"),
-            ("mensajes", "💬 Mensajes"),
-            ("automatizacion", "🤖 Automatización")
+            ("numeros", "📱 Números", "Gestionar números de teléfono"),
+            ("mensajes", "💬 Mensajes", "Crear y editar mensajes"),
+            ("automatizacion", "🤖 Automatización", "Controlar el envío automático")
         ]
 
-        for tab_id, text in nav_items:
+        for i, (tab_id, text, tooltip) in enumerate(nav_items):
+            # Frame contenedor para cada botón
+            btn_frame = self.style_manager.create_styled_frame(nav_container, "secondary")
+            btn_frame.pack(fill=tk.X, pady=(0, 8))
+
             button = tk.Button(
-                self.sidebar,
+                btn_frame,
                 text=text,
                 font=self.style_manager.fonts["button"],
-                bg=self.style_manager.colors["bg_secondary"],
+                bg=self.style_manager.colors["bg_accent"],
                 fg=self.style_manager.colors["text_primary"],
                 border=0,
                 pady=15,
+                padx=20,
                 cursor="hand2",
+                anchor="w",
+                relief="flat",
                 command=lambda t=tab_id: self.tab_callback(t)
             )
-            button.pack(fill=tk.X, padx=10, pady=5)
+            button.pack(fill=tk.X)
+
+            # Agregar efecto hover mejorado
+            self.style_manager._add_hover_effect(
+                button,
+                self.style_manager.colors["hover"],
+                self.style_manager.colors["bg_accent"]
+            )
+
             self.nav_buttons[tab_id] = button
 
-        # Espaciador
-        spacer = self.style_manager.create_styled_frame(self.sidebar, "secondary")
+        # Espaciador flexible
+        spacer = self.style_manager.create_styled_frame(main_container, "secondary")
         spacer.pack(fill=tk.BOTH, expand=True)
 
-        # Estado en la parte inferior
+        # Sección de estado en la parte inferior
+        status_container = self.style_manager.create_styled_frame(main_container, "card")
+        status_container.pack(fill=tk.X, pady=(10, 0))
+        status_container.configure(relief="solid", bd=1, highlightthickness=0)
+
+        # Título de estado
+        status_title = self.style_manager.create_styled_label(
+            status_container,
+            "Estado:",
+            "small"
+        )
+        status_title.configure(
+            bg=self.style_manager.colors["bg_card"],
+            fg=self.style_manager.colors["accent_light"]
+        )
+        status_title.pack(pady=(10, 5), padx=15, anchor="w")
+
+        # Mensaje de estado
         self.status_label = self.style_manager.create_styled_label(
-            self.sidebar,
+            status_container,
             "Listo",
             "small"
         )
         self.status_label.configure(
-            bg=self.style_manager.colors["bg_secondary"],
-            wraplength=180
+            bg=self.style_manager.colors["bg_card"],
+            wraplength=180,
+            justify="left"
         )
-        self.status_label.pack(side=tk.BOTTOM, pady=10, padx=10)
+        self.status_label.pack(pady=(0, 10), padx=15, anchor="w")
 
     def update_active_tab(self, active_tab):
         """
-        Actualiza el botón activo en la navegación
+        Actualiza el botón activo en la navegación con mejor feedback visual
 
         Args:
             active_tab: ID de la pestaña activa
         """
         for tab_id, button in self.nav_buttons.items():
             if tab_id == active_tab:
-                button.configure(bg=self.style_manager.colors["accent"])
+                button.configure(
+                    bg=self.style_manager.colors["accent"],
+                    fg=self.style_manager.colors["text_primary"]
+                )
+                # Actualizar hover effect para botón activo
+                self.style_manager._add_hover_effect(
+                    button,
+                    self.style_manager.colors["accent_light"],
+                    self.style_manager.colors["accent"]
+                )
             else:
-                button.configure(bg=self.style_manager.colors["bg_secondary"])
+                button.configure(
+                    bg=self.style_manager.colors["bg_accent"],
+                    fg=self.style_manager.colors["text_primary"]
+                )
+                # Restaurar hover effect normal
+                self.style_manager._add_hover_effect(
+                    button,
+                    self.style_manager.colors["hover"],
+                    self.style_manager.colors["bg_accent"]
+                )
 
     def update_status(self, message):
         """
-        Actualiza el mensaje de estado
+        Actualiza el mensaje de estado con mejor formato
 
         Args:
             message: Nuevo mensaje de estado
         """
-        short_message = message[:30] + "..." if len(message) > 30 else message
+        # Truncar mensaje si es muy largo
+        short_message = message[:35] + "..." if len(message) > 35 else message
         self.status_label.configure(text=short_message)
 
 
 class TabHeader:
     """
-    Cabecera reutilizable para pestañas
+    Cabecera reutilizable para pestañas con diseño mejorado
     """
 
     def __init__(self, parent, style_manager: StyleManager, title, description):
@@ -128,18 +188,27 @@ class TabHeader:
         """
         self.style_manager = style_manager
 
-        # Título
-        title_label = style_manager.create_styled_label(parent, title, "title")
-        title_label.pack(pady=(20, 10))
+        # Contenedor principal para la cabecera
+        header_frame = style_manager.create_styled_frame(parent)
+        header_frame.pack(fill=tk.X, padx=25, pady=(25, 30))
 
-        # Descripción
-        desc_label = style_manager.create_styled_label(parent, description, "secondary")
-        desc_label.pack(pady=(0, 20))
+        # Título
+        title_label = style_manager.create_styled_label(header_frame, title, "title")
+        title_label.pack(anchor="w")
+
+        # Descripción con mejor espaciado
+        desc_label = style_manager.create_styled_label(header_frame, description, "secondary")
+        desc_label.pack(anchor="w", pady=(8, 0))
+
+        # Línea separadora sutil
+        separator = style_manager.create_styled_frame(header_frame, "accent")
+        separator.configure(height=2)
+        separator.pack(fill=tk.X, pady=(15, 0))
 
 
 class ListManager:
     """
-    Componente reutilizable para gestión de listas con scrollbar
+    Componente reutilizable para gestión de listas con diseño mejorado
     """
 
     def __init__(self, parent, style_manager: StyleManager, title,
@@ -160,45 +229,52 @@ class ListManager:
         self.delete_callback = delete_callback
         self.edit_callback = edit_callback
 
-        # Frame principal
-        self.list_frame = style_manager.create_styled_frame(parent)
-        self.list_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
+        # Frame principal con mejor contenedor
+        self.list_frame = style_manager.create_styled_labelframe(parent, title)
+        self.list_frame.pack(fill=tk.BOTH, expand=True, padx=25, pady=(0, 20))
 
-        # Título de la lista
-        title_label = style_manager.create_styled_label(self.list_frame, title, "normal")
-        title_label.pack(anchor="w", pady=(0, 5))
+        # Contenido interno con padding
+        content_frame = style_manager.create_styled_frame(self.list_frame)
+        content_frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
 
         # Frame para listbox con scrollbar
-        listbox_frame = style_manager.create_styled_frame(self.list_frame)
-        listbox_frame.pack(fill=tk.BOTH, expand=True)
+        listbox_frame = style_manager.create_styled_frame(content_frame, "card")
+        listbox_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 15))
+        listbox_frame.configure(relief="solid", bd=1)
 
-        # Listbox
-        self.listbox = style_manager.create_styled_listbox(listbox_frame)
-        self.listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        # Listbox con altura fija mejorada
+        self.listbox = style_manager.create_styled_listbox(listbox_frame, height=12)
+        self.listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=2, pady=2)
 
-        # Scrollbar
+        # Scrollbar con mejor estilo
         scrollbar = tk.Scrollbar(listbox_frame, orient="vertical")
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y, padx=(0, 2), pady=2)
+        scrollbar.configure(
+            bg=style_manager.colors["bg_accent"],
+            troughcolor=style_manager.colors["bg_card"],
+            borderwidth=0,
+            highlightthickness=0
+        )
 
         # Conectar scrollbar
         self.listbox.config(yscrollcommand=scrollbar.set)
         scrollbar.config(command=self.listbox.yview)
 
-        # Frame para botones
-        self.buttons_frame = style_manager.create_styled_frame(self.list_frame)
-        self.buttons_frame.pack(pady=(10, 0))
+        # Frame para botones con mejor disposición
+        self.buttons_frame = style_manager.create_styled_frame(content_frame)
+        self.buttons_frame.pack(fill=tk.X)
 
         self._create_buttons()
 
     def _create_buttons(self):
         """
-        Crea los botones de acción
+        Crea los botones de acción con mejor diseño
         """
         # Botón editar (solo si se proporciona callback)
         if self.edit_callback:
             edit_btn = self.style_manager.create_styled_button(
                 self.buttons_frame,
-                "Editar",
+                "✏️ Editar",
                 self.edit_callback,
                 "warning"
             )
@@ -208,7 +284,7 @@ class ListManager:
         if self.delete_callback:
             delete_btn = self.style_manager.create_styled_button(
                 self.buttons_frame,
-                "Eliminar",
+                "🗑️ Eliminar",
                 self.delete_callback,
                 "error"
             )
@@ -242,7 +318,7 @@ class ListManager:
 
 class InputSection:
     """
-    Sección reutilizable para entrada de datos
+    Sección reutilizable para entrada de datos con diseño mejorado
     """
 
     def __init__(self, parent, style_manager: StyleManager, label_text,
@@ -261,55 +337,64 @@ class InputSection:
         self.style_manager = style_manager
         self.input_type = input_type
 
-        # Frame principal
-        self.input_frame = style_manager.create_styled_frame(parent)
-        self.input_frame.pack(fill=tk.X, padx=20, pady=10)
+        # Frame principal con mejor contenedor
+        self.input_frame = style_manager.create_styled_labelframe(parent, label_text)
+        self.input_frame.pack(fill=tk.X, padx=25, pady=(0, 20))
 
-        # Etiqueta
-        label = style_manager.create_styled_label(self.input_frame, label_text, "normal")
-        label.pack(anchor="w")
-
-        # Frame para entrada y botón
-        controls_frame = style_manager.create_styled_frame(self.input_frame)
-        controls_frame.pack(fill=tk.X, pady=(5, 0))
+        # Contenido interno con padding
+        content_frame = style_manager.create_styled_frame(self.input_frame)
+        content_frame.pack(fill=tk.X, padx=15, pady=15)
 
         # Crear widget de entrada según el tipo
         if input_type == "entry":
+            # Frame para entrada y botón
+            controls_frame = style_manager.create_styled_frame(content_frame)
+            controls_frame.pack(fill=tk.X)
+
             self.input_widget = style_manager.create_styled_entry(controls_frame)
-            self.input_widget.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
+            self.input_widget.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 15))
+            self.input_widget.configure(font=style_manager.fonts["normal"])
+
             # Agregar evento Enter para entry
             if button_callback:
                 self.input_widget.bind("<Return>", lambda e: button_callback())
+
+            # Botón en la misma línea
+            if button_callback:
+                button = style_manager.create_styled_button(
+                    controls_frame,
+                    button_text,
+                    button_callback,
+                    "accent"
+                )
+                button.pack(side=tk.RIGHT)
+
         else:  # text
             self.input_widget = scrolledtext.ScrolledText(
-                controls_frame,
-                height=4,
+                content_frame,
+                height=5,
                 font=style_manager.fonts["normal"],
-                bg=style_manager.colors["bg_secondary"],
+                bg=style_manager.colors["bg_card"],
                 fg=style_manager.colors["text_primary"],
                 border=1,
                 relief="solid",
-                wrap=tk.WORD
+                wrap=tk.WORD,
+                highlightthickness=1,
+                highlightcolor=style_manager.colors["accent"],
+                highlightbackground=style_manager.colors["border"],
+                insertbackground=style_manager.colors["text_primary"]
             )
-            self.input_widget.pack(fill=tk.X, pady=(0, 10))
+            self.input_widget.pack(fill=tk.X, pady=(0, 15))
 
-        # Botón
-        if button_callback and input_type == "entry":
-            button = style_manager.create_styled_button(
-                controls_frame,
-                button_text,
-                button_callback,
-                "accent"
-            )
-            button.pack(side=tk.RIGHT)
-        elif button_callback and input_type == "text":
-            button = style_manager.create_styled_button(
-                self.input_frame,
-                button_text,
-                button_callback,
-                "accent"
-            )
-            button.pack()
+            # Botón debajo del texto
+            if button_callback:
+                button = style_manager.create_styled_button(
+                    content_frame,
+                    button_text,
+                    button_callback,
+                    "accent"
+                )
+                button.pack()
 
     def get_value(self):
         """
@@ -348,7 +433,7 @@ class InputSection:
 
 class StatsDisplay:
     """
-    Componente para mostrar estadísticas
+    Componente para mostrar estadísticas con diseño mejorado
     """
 
     def __init__(self, parent, style_manager: StyleManager):
@@ -361,20 +446,33 @@ class StatsDisplay:
         """
         self.style_manager = style_manager
 
-        # Frame con borde
-        self.stats_frame = style_manager.create_styled_labelframe(parent, "Estadísticas")
-        self.stats_frame.pack(fill=tk.X, padx=20, pady=10)
+        # Frame con borde mejorado
+        self.stats_frame = style_manager.create_styled_labelframe(parent, "📊 Estadísticas")
+        self.stats_frame.pack(fill=tk.X, padx=25, pady=(0, 20))
 
-        # Contenido
+        # Contenido con mejor disposición
         content_frame = style_manager.create_styled_frame(self.stats_frame)
-        content_frame.pack(fill=tk.X, padx=10, pady=10)
+        content_frame.pack(fill=tk.X, padx=15, pady=15)
 
-        # Labels de estadísticas
-        self.stats_numbers = style_manager.create_styled_label(content_frame, "Números: 0", "normal")
+        # Contenedor para estadísticas en grid
+        stats_container = style_manager.create_styled_frame(content_frame)
+        stats_container.pack(fill=tk.X)
+
+        # Columna izquierda
+        left_col = style_manager.create_styled_frame(stats_container)
+        left_col.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        # Columna derecha
+        right_col = style_manager.create_styled_frame(stats_container)
+        right_col.pack(side=tk.RIGHT, fill=tk.X, expand=True)
+
+        # Estadística de números
+        self.stats_numbers = style_manager.create_styled_label(left_col, "📱 Números: 0", "normal")
         self.stats_numbers.pack(anchor="w")
 
-        self.stats_messages = style_manager.create_styled_label(content_frame, "Mensajes: 0", "normal")
-        self.stats_messages.pack(anchor="w")
+        # Estadística de mensajes
+        self.stats_messages = style_manager.create_styled_label(right_col, "💬 Mensajes: 0", "normal")
+        self.stats_messages.pack(anchor="e")
 
     def update_stats(self, numbers_count, messages_count):
         """
@@ -384,16 +482,16 @@ class StatsDisplay:
             numbers_count: Cantidad de números
             messages_count: Cantidad de mensajes
         """
-        self.stats_numbers.configure(text=f"Números: {numbers_count}")
-        self.stats_messages.configure(text=f"Mensajes: {messages_count}")
+        self.stats_numbers.configure(text=f"📱 Números: {numbers_count}")
+        self.stats_messages.configure(text=f"💬 Mensajes: {messages_count}")
 
 
 class ActivityLog:
     """
-    Componente para el registro de actividad
+    Componente para el registro de actividad con diseño mejorado
     """
 
-    def __init__(self, parent, style_manager: StyleManager, title="Registro de Actividad"):
+    def __init__(self, parent, style_manager: StyleManager, title="📋 Registro de Actividad"):
         """
         Inicializa el log de actividad
 
@@ -404,36 +502,47 @@ class ActivityLog:
         """
         self.style_manager = style_manager
 
-        # Frame con borde
+        # Frame con borde mejorado
         log_frame = style_manager.create_styled_labelframe(parent, title)
-        log_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(10, 20))
+        log_frame.pack(fill=tk.BOTH, expand=True, padx=25, pady=(0, 25))
 
-        # Área de texto con scroll
+        # Contenido con padding
+        content_frame = style_manager.create_styled_frame(log_frame, "card")
+        content_frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
+        content_frame.configure(relief="solid", bd=1)
+
+        # Área de texto con scroll mejorada
         self.log_text = scrolledtext.ScrolledText(
-            log_frame,
-            height=8,
+            content_frame,
+            height=10,
             font=style_manager.fonts["console"],
-            bg=style_manager.colors["bg_secondary"],
+            bg=style_manager.colors["bg_card"],
             fg=style_manager.colors["text_primary"],
             border=0,
             state="disabled",
-            wrap=tk.WORD
+            wrap=tk.WORD,
+            highlightthickness=0,
+            insertbackground=style_manager.colors["text_primary"]
         )
-        self.log_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self.log_text.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
 
     def add_message(self, message):
         """
-        Agrega un mensaje al log
+        Agrega un mensaje al log con timestamp mejorado
 
         Args:
             message: Mensaje a agregar
         """
+        import datetime
+        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+
         self.log_text.configure(state="normal")
-        self.log_text.insert(tk.END, f"{message}\n")
+        self.log_text.insert(tk.END, f"[{timestamp}] {message}\n")
         self.log_text.see(tk.END)
         self.log_text.configure(state="disabled")
 
 
+# Funciones de diálogo mejoradas
 def show_validation_error(message):
     """
     Muestra un mensaje de error de validación
@@ -441,7 +550,7 @@ def show_validation_error(message):
     Args:
         message: Mensaje de error
     """
-    messagebox.showwarning("Advertencia", message)
+    messagebox.showwarning("⚠️ Advertencia", message)
 
 
 def show_success_message(message):
@@ -451,7 +560,7 @@ def show_success_message(message):
     Args:
         message: Mensaje de éxito
     """
-    messagebox.showinfo("Éxito", message)
+    messagebox.showinfo("✅ Éxito", message)
 
 
 def show_error_message(message):
@@ -461,7 +570,7 @@ def show_error_message(message):
     Args:
         message: Mensaje de error
     """
-    messagebox.showerror("Error", message)
+    messagebox.showerror("❌ Error", message)
 
 
 def show_confirmation_dialog(message):
@@ -474,4 +583,4 @@ def show_confirmation_dialog(message):
     Returns:
         True si el usuario confirma
     """
-    return messagebox.askyesno("Confirmar", message)
+    return messagebox.askyesno("🤔 Confirmar", message)
