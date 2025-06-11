@@ -95,6 +95,44 @@ class StyleManager:
         style.map("Action.TButton",
                   background=[('active', self.colors["accent_light"])])
 
+        # Estilos específicos para Treeview (vista previa de Excel)
+        self._configure_treeview_styles(style)
+
+    def _configure_treeview_styles(self, style):
+        """
+        Configura estilos específicos para el Treeview usado en la vista previa de Excel
+
+        Args:
+            style: Instancia de ttk.Style
+        """
+        # Configurar estilo personalizado para Treeview
+        style.configure("Dark.Treeview",
+                        background=self.colors["bg_card"],
+                        foreground=self.colors["text_primary"],
+                        fieldbackground=self.colors["bg_card"],
+                        borderwidth=0,
+                        relief="flat",
+                        rowheight=25)
+
+        # Configurar headers del Treeview
+        style.configure("Dark.Treeview.Heading",
+                        background=self.colors["bg_accent"],
+                        foreground=self.colors["text_primary"],
+                        borderwidth=1,
+                        relief="solid",
+                        font=self.fonts["heading"])
+
+        # Configurar selección y hover
+        style.map("Dark.Treeview",
+                  background=[('selected', self.colors["accent"]),
+                              ('focus', self.colors["accent"])],
+                  foreground=[('selected', self.colors["text_primary"]),
+                              ('focus', self.colors["text_primary"])])
+
+        # Configurar separadores
+        style.configure("Dark.Treeview.Separator",
+                        background=self.colors["border"])
+
     def create_styled_button(self, parent, text, command=None, style="normal", **kwargs):
         """
         Crea un botón con estilo personalizado mejorado
@@ -279,7 +317,7 @@ class StyleManager:
 
         Args:
             parent: Widget padre
-            style: Tipo de estilo (primary, secondary, accent, card)
+            style: Tipo de estilo (primary, secondary, accent, card, border)
             **kwargs: Argumentos adicionales
 
         Returns:
@@ -290,7 +328,8 @@ class StyleManager:
             "primary": {"bg": self.colors["bg_primary"]},
             "secondary": {"bg": self.colors["bg_secondary"]},
             "accent": {"bg": self.colors["bg_accent"]},
-            "card": {"bg": self.colors["bg_card"]}
+            "card": {"bg": self.colors["bg_card"]},
+            "border": {"bg": self.colors["border"]}
         }
 
         config = style_configs.get(style, style_configs["primary"])

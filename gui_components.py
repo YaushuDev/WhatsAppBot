@@ -34,17 +34,17 @@ class EmojiMenu:
         # Colección de emoticones organizados por categorías
         self.emoji_categories = {
             "😊 Caras": ["😀", "😊", "😍", "🤗", "😂", "🤣", "😉", "😎", "🤩", "🥰",
-                         "😘", "😋", "😜", "🤔", "😴", "🤤", "😇", "🙂", "🙃", "😌"],
+                        "😘", "😋", "😜", "🤔", "😴", "🤤", "😇", "🙂", "🙃", "😌"],
             "❤️ Amor": ["❤️", "💕", "💖", "💗", "💓", "💘", "💝", "💟", "💜", "🖤",
                         "🤍", "🤎", "💙", "💚", "💛", "🧡", "💋", "😍", "🥰", "😘"],
             "👍 Gestos": ["👍", "👎", "👌", "✌️", "🤞", "🤟", "🤘", "🤙", "👈", "👉",
-                          "👆", "👇", "☝️", "✋", "🤚", "🖐️", "🖖", "👋", "🤝", "🙏"],
+                         "👆", "👇", "☝️", "✋", "🤚", "🖐️", "🖖", "👋", "🤝", "🙏"],
             "🎉 Celebración": ["🎉", "🎊", "🥳", "🎈", "🎁", "🎂", "🍰", "🎆", "🎇", "✨",
-                               "🌟", "⭐", "💫", "🎵", "🎶", "🎤", "🏆", "🥇", "🥈", "🥉"],
+                              "🌟", "⭐", "💫", "🎵", "🎶", "🎤", "🏆", "🥇", "🥈", "🥉"],
             "🌞 Naturaleza": ["🌞", "🌙", "⭐", "🌟", "☀️", "⛅", "🌤️", "⛈️", "🌈", "🔥",
-                              "💧", "🌊", "🌸", "🌺", "🌻", "🌹", "🌷", "🌱", "🌿", "🍀"],
+                             "💧", "🌊", "🌸", "🌺", "🌻", "🌹", "🌷", "🌱", "🌿", "🍀"],
             "🚀 Objetos": ["📱", "💻", "📧", "📞", "⏰", "📅", "🎯", "🚀", "⚡", "💡",
-                           "🔔", "📢", "💰", "💳", "🎮", "🛠️", "🔑", "📝", "📊", "📈"]
+                          "🔔", "📢", "💰", "💳", "🎮", "🛠️", "🔑", "📝", "📊", "📈"]
         }
 
         # Frame principal del menú
@@ -103,8 +103,8 @@ class EmojiMenu:
         style = ttk.Style()
         style.configure("TNotebook", background=self.style_manager.colors["bg_card"])
         style.configure("TNotebook.Tab",
-                       background=self.style_manager.colors["bg_accent"],
-                       foreground=self.style_manager.colors["text_primary"])
+                        background=self.style_manager.colors["bg_accent"],
+                        foreground=self.style_manager.colors["text_primary"])
 
         # Crear una pestaña para cada categoría
         for category_name, emojis in self.emoji_categories.items():
@@ -454,7 +454,7 @@ class TabHeader:
 
 class SubTabNavigator:
     """
-    Navegador de sub-pestañas para la sección de contactos
+    Navegador de sub-pestañas compacto y elegante para la sección de contactos
     """
 
     def __init__(self, parent, style_manager: StyleManager, tabs_info: List[tuple], callback):
@@ -472,30 +472,39 @@ class SubTabNavigator:
         self.buttons = {}
         self.current_tab = None
 
-        # Frame para los botones de sub-pestañas
-        self.nav_frame = style_manager.create_styled_frame(parent, "secondary")
-        self.nav_frame.pack(fill=tk.X, padx=25, pady=(0, 20))
+        # Frame compacto para los botones de sub-pestañas
+        self.nav_frame = style_manager.create_styled_frame(parent)
+        self.nav_frame.pack(fill=tk.X, padx=25, pady=(0, 15))
 
-        # Crear botones de navegación
-        button_frame = style_manager.create_styled_frame(self.nav_frame, "secondary")
-        button_frame.pack(pady=15)
+        # Crear botones de navegación compactos
+        button_frame = style_manager.create_styled_frame(self.nav_frame)
+        button_frame.pack()
 
         for tab_id, text, icon in tabs_info:
-            btn_text = f"{icon} {text}"
-            button = style_manager.create_styled_button(
+            # Botón compacto tipo "pill"
+            button = tk.Button(
                 button_frame,
-                btn_text,
-                lambda t=tab_id: self._on_tab_change(t),
-                "normal"
+                text=f"{icon} {text}",
+                font=self.style_manager.fonts["normal"],
+                bg=self.style_manager.colors["bg_accent"],
+                fg=self.style_manager.colors["text_secondary"],
+                border=0,
+                pady=8,
+                padx=20,
+                cursor="hand2",
+                relief="flat",
+                command=lambda t=tab_id: self._on_tab_change(t)
             )
-            button.configure(pady=12, padx=25)
-            button.pack(side=tk.LEFT, padx=(0, 10))
-            self.buttons[tab_id] = button
+            button.pack(side=tk.LEFT, padx=(0, 8))
 
-        # Línea separadora
-        separator = style_manager.create_styled_frame(self.nav_frame, "border")
-        separator.configure(height=1)
-        separator.pack(fill=tk.X, pady=(10, 0))
+            # Efecto hover sutil
+            self.style_manager._add_hover_effect(
+                button,
+                self.style_manager.colors["hover"],
+                self.style_manager.colors["bg_accent"]
+            )
+
+            self.buttons[tab_id] = button
 
     def _on_tab_change(self, tab_id):
         """
@@ -509,7 +518,7 @@ class SubTabNavigator:
 
     def set_active_tab(self, tab_id):
         """
-        Establece la sub-pestaña activa visualmente
+        Establece la sub-pestaña activa visualmente con diseño mejorado
 
         Args:
             tab_id: ID de la sub-pestaña activa
@@ -517,14 +526,30 @@ class SubTabNavigator:
         self.current_tab = tab_id
         for btn_id, button in self.buttons.items():
             if btn_id == tab_id:
+                # Estilo activo más elegante
                 button.configure(
                     bg=self.style_manager.colors["accent"],
-                    fg=self.style_manager.colors["text_primary"]
+                    fg=self.style_manager.colors["text_primary"],
+                    relief="flat"
+                )
+                # Hover effect para botón activo
+                self.style_manager._add_hover_effect(
+                    button,
+                    self.style_manager.colors["accent_light"],
+                    self.style_manager.colors["accent"]
                 )
             else:
+                # Estilo inactivo sutil
                 button.configure(
                     bg=self.style_manager.colors["bg_accent"],
-                    fg=self.style_manager.colors["text_primary"]
+                    fg=self.style_manager.colors["text_secondary"],
+                    relief="flat"
+                )
+                # Hover effect normal
+                self.style_manager._add_hover_effect(
+                    button,
+                    self.style_manager.colors["hover"],
+                    self.style_manager.colors["bg_accent"]
                 )
 
 
@@ -746,7 +771,7 @@ class ContactInputSection:
 
 class ExcelUploadComponent:
     """
-    Componente para carga masiva desde Excel
+    Componente para carga masiva desde Excel con vista previa en tema oscuro
     """
 
     def __init__(self, parent, style_manager: StyleManager, upload_callback=None):
@@ -845,7 +870,7 @@ class ExcelUploadComponent:
 
     def _create_preview_section(self):
         """
-        Crea la sección de vista previa
+        Crea la sección de vista previa con tema oscuro correcto
         """
         preview_frame = self.style_manager.create_styled_labelframe(self.main_frame, "👁️ Vista Previa")
         preview_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 15))
@@ -853,27 +878,38 @@ class ExcelUploadComponent:
         content = self.style_manager.create_styled_frame(preview_frame)
         content.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
 
-        # Tabla de vista previa usando Treeview
+        # Configurar estilo del Treeview para tema oscuro
+        self._configure_treeview_style()
+
+        # Frame contenedor para la tabla con fondo del tema
         tree_frame = self.style_manager.create_styled_frame(content, "card")
         tree_frame.pack(fill=tk.BOTH, expand=True)
         tree_frame.configure(relief="solid", bd=1)
 
-        # Configurar Treeview
-        self.preview_tree = ttk.Treeview(tree_frame, columns=('nombre', 'numero'), show='headings', height=8)
+        # Treeview con configuración de tema oscuro
+        self.preview_tree = ttk.Treeview(
+            tree_frame,
+            columns=('nombre', 'numero'),
+            show='headings',
+            height=8,
+            style="Dark.Treeview"
+        )
+
+        # Configurar headers
         self.preview_tree.heading('nombre', text='Nombre')
         self.preview_tree.heading('numero', text='Número')
-        self.preview_tree.column('nombre', width=200)
-        self.preview_tree.column('numero', width=150)
 
-        # Scrollbars
+        # Ajustar ancho de columnas para evitar scroll horizontal
+        self.preview_tree.column('nombre', width=300, minwidth=200)
+        self.preview_tree.column('numero', width=200, minwidth=150)
+
+        # Solo scrollbar vertical
         v_scrollbar = ttk.Scrollbar(tree_frame, orient="vertical", command=self.preview_tree.yview)
-        h_scrollbar = ttk.Scrollbar(tree_frame, orient="horizontal", command=self.preview_tree.xview)
-        self.preview_tree.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
+        self.preview_tree.configure(yscrollcommand=v_scrollbar.set)
 
-        # Pack elements
+        # Pack elements - sin scrollbar horizontal
         self.preview_tree.pack(side="left", fill="both", expand=True, padx=5, pady=5)
         v_scrollbar.pack(side="right", fill="y", pady=5)
-        h_scrollbar.pack(side="bottom", fill="x", padx=5)
 
         # Label de estadísticas
         self.stats_label = self.style_manager.create_styled_label(
@@ -882,6 +918,35 @@ class ExcelUploadComponent:
             "secondary"
         )
         self.stats_label.pack(pady=(10, 0))
+
+    def _configure_treeview_style(self):
+        """
+        Configura el estilo del Treeview para que use el tema oscuro
+        """
+        style = ttk.Style()
+
+        # Configurar estilo personalizado para Treeview
+        style.theme_use('clam')  # Usar tema base clam
+
+        # Configurar colores del Treeview
+        style.configure("Dark.Treeview",
+                        background=self.style_manager.colors["bg_card"],
+                        foreground=self.style_manager.colors["text_primary"],
+                        fieldbackground=self.style_manager.colors["bg_card"],
+                        borderwidth=0,
+                        relief="flat")
+
+        # Configurar headers
+        style.configure("Dark.Treeview.Heading",
+                        background=self.style_manager.colors["bg_accent"],
+                        foreground=self.style_manager.colors["text_primary"],
+                        borderwidth=1,
+                        relief="solid")
+
+        # Configurar selección
+        style.map("Dark.Treeview",
+                  background=[('selected', self.style_manager.colors["accent"])],
+                  foreground=[('selected', self.style_manager.colors["text_primary"])])
 
     def _create_action_buttons(self):
         """

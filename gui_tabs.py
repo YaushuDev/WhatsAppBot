@@ -186,7 +186,7 @@ class MessageInputSection:
                 self._update_image_preview()
                 self.clear_image_btn.configure(state="normal")
             else:
-                show_error_message("El archivo seleccionado no es una imagen válida")
+                show_validation_error("El archivo seleccionado no es una imagen válida")
 
     def _clear_image(self):
         """
@@ -812,21 +812,21 @@ class BulkLoadSubTab:
             self._import_contacts
         )
 
-        # Estadísticas de importación
+        # Estadísticas de importación con mejor espaciado
         self._create_import_stats()
 
     def _create_import_stats(self):
         """
-        Crea la sección de estadísticas de importación
+        Crea la sección de estadísticas de importación con espaciado optimizado
         """
         stats_frame = self.style_manager.create_styled_labelframe(
             self.frame,
             "📊 Estadísticas de Importación"
         )
-        stats_frame.pack(fill=tk.X, padx=25, pady=(20, 0))
+        stats_frame.pack(fill=tk.X, padx=25, pady=(15, 0))
 
         content = self.style_manager.create_styled_frame(stats_frame)
-        content.pack(fill=tk.X, padx=15, pady=15)
+        content.pack(fill=tk.X, padx=15, pady=12)
 
         # Stats container
         stats_container = self.style_manager.create_styled_frame(content)
@@ -921,7 +921,7 @@ class BulkLoadSubTab:
 
 class NumbersTab:
     """
-    Pestaña principal de gestión de contactos con sub-pestañas
+    Pestaña principal de gestión de contactos con sub-pestañas compactas
     """
 
     def __init__(self, parent, style_manager: StyleManager, data_manager):
@@ -948,7 +948,7 @@ class NumbersTab:
             "Administra los contactos a los que se enviarán mensajes, usando gestión manual o carga masiva"
         )
 
-        # Navegador de sub-pestañas
+        # Navegador de sub-pestañas compacto
         subtabs_info = [
             ("manual", "Gestión Manual", "✏️"),
             ("bulk", "Carga Masiva", "📁")
