@@ -1,10 +1,11 @@
 # gui_tabs.py
 """
-Pestañas del Bot de WhatsApp
+Pestañas del Bot de WhatsApp con soporte completo para emoticones
 Implementa la lógica específica de cada pestaña (contactos, mensajes, automatización)
 utilizando los componentes reutilizables para mantener el código organizado y conciso.
 Incluye soporte completo para mensajes con texto e imágenes, gestión de contactos
-con funcionalidad manual y carga masiva desde archivos Excel.
+con funcionalidad manual y carga masiva desde archivos Excel, además de un menú
+de emoticones integrado para una mejor experiencia de usuario.
 """
 
 import tkinter as tk
@@ -16,13 +17,13 @@ from gui_styles import StyleManager
 from gui_components import (TabHeader, ListManager, InputSection, StatsDisplay,
                             ActivityLog, SubTabNavigator, ContactListManager,
                             ContactInputSection, ExcelUploadComponent, ContactEditDialog,
-                            show_validation_error, show_success_message,
+                            EmojiMenu, show_validation_error, show_success_message,
                             show_error_message, show_confirmation_dialog)
 
 
 class MessageInputSection:
     """
-    Sección especializada para entrada de mensajes con texto e imagen
+    Sección especializada para entrada de mensajes con texto, imagen y emoticones
     """
 
     def __init__(self, parent, style_manager: StyleManager, button_callback=None):
@@ -65,6 +66,9 @@ class MessageInputSection:
         )
         self.text_widget.pack(fill=tk.X, pady=(5, 15))
 
+        # Menú de emoticones
+        self._create_emoji_menu(content_frame)
+
         # Sección de imagen
         self._create_image_section(content_frame)
 
@@ -77,6 +81,35 @@ class MessageInputSection:
                 "accent"
             )
             button.pack(pady=(10, 0))
+
+    def _create_emoji_menu(self, parent):
+        """
+        Crea el menú de emoticones integrado
+
+        Args:
+            parent: Widget padre
+        """
+        self.emoji_menu = EmojiMenu(parent, self.style_manager, self._insert_emoji)
+
+    def _insert_emoji(self, emoji):
+        """
+        Inserta un emoji en la posición del cursor
+
+        Args:
+            emoji: Emoji a insertar
+        """
+        try:
+            # Obtener posición actual del cursor
+            cursor_pos = self.text_widget.index(tk.INSERT)
+
+            # Insertar emoji en la posición del cursor
+            self.text_widget.insert(cursor_pos, emoji)
+
+            # Mantener el foco en el área de texto
+            self.text_widget.focus_set()
+
+        except Exception as e:
+            print(f"Error insertando emoji: {e}")
 
     def _create_image_section(self, parent):
         """
@@ -279,7 +312,7 @@ class MessageInputSection:
 
 class MessageEditDialog:
     """
-    Diálogo para editar mensajes con texto e imagen
+    Diálogo para editar mensajes con texto, imagen y emoticones
     """
 
     def __init__(self, parent, style_manager: StyleManager, message_data, data_manager, callback):
@@ -305,16 +338,16 @@ class MessageEditDialog:
         self.style_manager.configure_window(
             self.dialog,
             "Editar Mensaje",
-            "500x600"
+            "600x700"
         )
         self.dialog.grab_set()
         self.dialog.transient(parent)
 
         # Centrar la ventana
         self.dialog.update_idletasks()
-        x = (self.dialog.winfo_screenwidth() // 2) - (500 // 2)
-        y = (self.dialog.winfo_screenheight() // 2) - (600 // 2)
-        self.dialog.geometry(f"500x600+{x}+{y}")
+        x = (self.dialog.winfo_screenwidth() // 2) - (600 // 2)
+        y = (self.dialog.winfo_screenheight() // 2) - (700 // 2)
+        self.dialog.geometry(f"600x700+{x}+{y}")
 
         self._create_content(message_data)
 
@@ -355,8 +388,11 @@ class MessageEditDialog:
             highlightbackground=self.style_manager.colors["border"],
             insertbackground=self.style_manager.colors["text_primary"]
         )
-        self.text_widget.pack(fill=tk.X, pady=(5, 20))
+        self.text_widget.pack(fill=tk.X, pady=(5, 15))
         self.text_widget.insert(1.0, message_data.get('texto', ''))
+
+        # Menú de emoticones en el diálogo
+        self._create_emoji_menu(main_frame)
 
         # Sección de imagen
         self._create_image_section(main_frame, message_data)
@@ -388,6 +424,35 @@ class MessageEditDialog:
 
         # Foco inicial
         self.text_widget.focus_set()
+
+    def _create_emoji_menu(self, parent):
+        """
+        Crea el menú de emoticones en el diálogo
+
+        Args:
+            parent: Widget padre
+        """
+        self.emoji_menu = EmojiMenu(parent, self.style_manager, self._insert_emoji)
+
+    def _insert_emoji(self, emoji):
+        """
+        Inserta un emoji en la posición del cursor
+
+        Args:
+            emoji: Emoji a insertar
+        """
+        try:
+            # Obtener posición actual del cursor
+            cursor_pos = self.text_widget.index(tk.INSERT)
+
+            # Insertar emoji en la posición del cursor
+            self.text_widget.insert(cursor_pos, emoji)
+
+            # Mantener el foco en el área de texto
+            self.text_widget.focus_set()
+
+        except Exception as e:
+            print(f"Error insertando emoji: {e}")
 
     def _create_image_section(self, parent, message_data):
         """
@@ -959,7 +1024,7 @@ class NumbersTab:
 
 class MessagesTab:
     """
-    Pestaña de gestión de mensajes con soporte para texto e imágenes
+    Pestaña de gestión de mensajes con soporte para texto, imágenes y emoticones
     """
 
     def __init__(self, parent, style_manager: StyleManager, data_manager):
@@ -982,10 +1047,10 @@ class MessagesTab:
             self.frame,
             style_manager,
             "Gestión de Mensajes",
-            "Crea mensajes con texto e imágenes que el bot enviará aleatoriamente. Usa emoticones para personalizar 😊🎉"
+            "Crea mensajes con texto e imágenes que el bot enviará aleatoriamente. Usa el menú de emoticones para hacer tus mensajes más expresivos 😊🎉"
         )
 
-        # Sección de entrada para mensajes
+        # Sección de entrada para mensajes con emoticones
         self.input_section = MessageInputSection(
             self.frame,
             style_manager,
@@ -1083,7 +1148,7 @@ class MessagesTab:
 
     def _refresh_messages(self):
         """
-        Actualiza la lista de mensajes mostrando indicador de imagen
+        Actualiza la lista de mensajes mostrando indicador de imagen y emoticones
         """
         messages = self.data_manager.get_messages()
         display_messages = []
@@ -1092,15 +1157,40 @@ class MessagesTab:
             text = message.get("texto", "")
             has_image = message.get("imagen") is not None
 
-            # Mostrar solo las primeras 45 caracteres para dejar espacio al icono
-            display_text = text[:45] + "..." if len(text) > 45 else text
+            # Mostrar solo las primeras 40 caracteres para dejar espacio a los indicadores
+            display_text = text[:40] + "..." if len(text) > 40 else text
 
-            # Agregar indicador de imagen
+            # Agregar indicadores
+            indicators = ""
             if has_image:
-                display_text = f"📷 {display_text}"
+                indicators += " 📷"
+
+            # Detectar si hay emoticones en el texto
+            import re
+            emoji_pattern = re.compile(
+                "["
+                "\U0001F600-\U0001F64F"  # emoticones faciales
+                "\U0001F300-\U0001F5FF"  # símbolos & pictogramas
+                "\U0001F680-\U0001F6FF"  # transporte & símbolos de mapa
+                "\U0001F1E0-\U0001F1FF"  # banderas (iOS)
+                "\U00002500-\U00002BEF"  # símbolos varios
+                "\U00002702-\U000027B0"
+                "\U000024C2-\U0001F251"
+                "\u2640-\u2642"
+                "\u2600-\u2B55"
+                "\u200d"
+                "\u23cf"
+                "\u23e9"
+                "\u231a"
+                "\ufe0f"  # variaciones de emoji
+                "\u3030"
+                "]+", flags=re.UNICODE)
+
+            if emoji_pattern.search(text):
+                indicators += " 😀"
 
             # Número del mensaje
-            display_messages.append(f"{i + 1}. {display_text}")
+            display_messages.append(f"{i + 1}. {display_text}{indicators}")
 
         self.list_manager.clear_and_populate(display_messages)
 
@@ -1141,7 +1231,7 @@ class AutomationTab:
             self.frame,
             style_manager,
             "Automatización",
-            "Controla la automatización del envío de mensajes a tus contactos"
+            "Controla la automatización del envío de mensajes a tus contactos con soporte completo para emoticones"
         )
 
         # Configuración de intervalos

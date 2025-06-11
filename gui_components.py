@@ -1,9 +1,9 @@
 # gui_components.py
 """
-Componentes reutilizables para el Bot de WhatsApp
-Contiene widgets personalizados y layouts comunes que se utilizan
-en múltiples partes de la interfaz, con diseño mejorado y disposición optimizada.
-Incluye componentes especializados para gestión de contactos y carga masiva de Excel.
+Componentes reutilizables para el Bot de WhatsApp con soporte para emoticones
+Contiene widgets personalizados y layouts comunes que se utilizan en múltiples partes de la interfaz,
+con diseño mejorado y disposición optimizada. Incluye componentes especializados para gestión de contactos,
+carga masiva de Excel y un menú de emoticones integrado para mejorar la experiencia del usuario.
 """
 
 import tkinter as tk
@@ -11,6 +11,249 @@ from tkinter import scrolledtext, messagebox, filedialog, ttk
 import os
 from typing import List, Dict, Any, Optional, Callable
 from gui_styles import StyleManager
+
+
+class EmojiMenu:
+    """
+    Menú de emoticones compacto y fácil de usar
+    """
+
+    def __init__(self, parent, style_manager: StyleManager, insert_callback=None):
+        """
+        Inicializa el menú de emoticones
+
+        Args:
+            parent: Widget padre
+            style_manager: Gestor de estilos
+            insert_callback: Función para insertar emoji en el texto
+        """
+        self.style_manager = style_manager
+        self.insert_callback = insert_callback
+        self.is_expanded = False
+
+        # Colección de emoticones organizados por categorías
+        self.emoji_categories = {
+            "😊 Caras": ["😀", "😊", "😍", "🤗", "😂", "🤣", "😉", "😎", "🤩", "🥰",
+                         "😘", "😋", "😜", "🤔", "😴", "🤤", "😇", "🙂", "🙃", "😌"],
+            "❤️ Amor": ["❤️", "💕", "💖", "💗", "💓", "💘", "💝", "💟", "💜", "🖤",
+                        "🤍", "🤎", "💙", "💚", "💛", "🧡", "💋", "😍", "🥰", "😘"],
+            "👍 Gestos": ["👍", "👎", "👌", "✌️", "🤞", "🤟", "🤘", "🤙", "👈", "👉",
+                          "👆", "👇", "☝️", "✋", "🤚", "🖐️", "🖖", "👋", "🤝", "🙏"],
+            "🎉 Celebración": ["🎉", "🎊", "🥳", "🎈", "🎁", "🎂", "🍰", "🎆", "🎇", "✨",
+                               "🌟", "⭐", "💫", "🎵", "🎶", "🎤", "🏆", "🥇", "🥈", "🥉"],
+            "🌞 Naturaleza": ["🌞", "🌙", "⭐", "🌟", "☀️", "⛅", "🌤️", "⛈️", "🌈", "🔥",
+                              "💧", "🌊", "🌸", "🌺", "🌻", "🌹", "🌷", "🌱", "🌿", "🍀"],
+            "🚀 Objetos": ["📱", "💻", "📧", "📞", "⏰", "📅", "🎯", "🚀", "⚡", "💡",
+                           "🔔", "📢", "💰", "💳", "🎮", "🛠️", "🔑", "📝", "📊", "📈"]
+        }
+
+        # Frame principal del menú
+        self.menu_frame = style_manager.create_styled_frame(parent)
+        self.menu_frame.pack(fill=tk.X, pady=(0, 10))
+
+        self._create_emoji_interface()
+
+    def _create_emoji_interface(self):
+        """
+        Crea la interfaz del menú de emoticones
+        """
+        # Header del menú con botón para expandir/contraer
+        header_frame = self.style_manager.create_styled_frame(self.menu_frame)
+        header_frame.pack(fill=tk.X, pady=(0, 10))
+
+        # Botón expandir/contraer
+        self.toggle_btn = self.style_manager.create_styled_button(
+            header_frame,
+            "😀 Emoticones ▼",
+            self._toggle_menu,
+            "normal"
+        )
+        self.toggle_btn.pack(side=tk.LEFT)
+
+        # Botón de ayuda
+        help_btn = self.style_manager.create_styled_button(
+            header_frame,
+            "ℹ️",
+            self._show_help,
+            "normal"
+        )
+        help_btn.configure(width=3)
+        help_btn.pack(side=tk.RIGHT)
+
+        # Contenedor para el menú expandible (inicialmente oculto)
+        self.emoji_container = self.style_manager.create_styled_frame(self.menu_frame, "card")
+        self.emoji_container.configure(relief="solid", bd=1)
+        # No hacer pack inicialmente - se mostrará al expandir
+
+        self._create_emoji_content()
+
+    def _create_emoji_content(self):
+        """
+        Crea el contenido del menú de emoticones
+        """
+        # Frame interno con padding
+        content_frame = self.style_manager.create_styled_frame(self.emoji_container, "card")
+        content_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        # Crear pestañas para cada categoría
+        self.notebook = ttk.Notebook(content_frame)
+        self.notebook.pack(fill=tk.BOTH, expand=True)
+
+        # Configurar estilo del notebook
+        style = ttk.Style()
+        style.configure("TNotebook", background=self.style_manager.colors["bg_card"])
+        style.configure("TNotebook.Tab",
+                       background=self.style_manager.colors["bg_accent"],
+                       foreground=self.style_manager.colors["text_primary"])
+
+        # Crear una pestaña para cada categoría
+        for category_name, emojis in self.emoji_categories.items():
+            self._create_emoji_tab(category_name, emojis)
+
+        # Frame para emoticones favoritos/recientes (primera fila siempre visible)
+        self._create_favorites_section(content_frame)
+
+    def _create_emoji_tab(self, category_name: str, emojis: List[str]):
+        """
+        Crea una pestaña de categoría de emoticones
+
+        Args:
+            category_name: Nombre de la categoría
+            emojis: Lista de emoticones
+        """
+        # Frame para la pestaña
+        tab_frame = self.style_manager.create_styled_frame(self.notebook, "card")
+        self.notebook.add(tab_frame, text=category_name.split()[0])  # Solo el emoji del título
+
+        # Crear grid de emoticones
+        row = 0
+        col = 0
+        max_cols = 10
+
+        for emoji in emojis:
+            btn = tk.Button(
+                tab_frame,
+                text=emoji,
+                font=("Segoe UI Emoji", 16),
+                bg=self.style_manager.colors["bg_card"],
+                fg=self.style_manager.colors["text_primary"],
+                border=0,
+                pady=5,
+                padx=5,
+                cursor="hand2",
+                relief="flat",
+                command=lambda e=emoji: self._insert_emoji(e)
+            )
+            btn.grid(row=row, column=col, padx=2, pady=2)
+
+            # Efecto hover
+            self.style_manager._add_hover_effect(
+                btn,
+                self.style_manager.colors["hover"],
+                self.style_manager.colors["bg_card"]
+            )
+
+            col += 1
+            if col >= max_cols:
+                col = 0
+                row += 1
+
+    def _create_favorites_section(self, parent):
+        """
+        Crea una sección de emoticones favoritos/frecuentes
+
+        Args:
+            parent: Widget padre
+        """
+        # Separador
+        separator = self.style_manager.create_styled_frame(parent, "border")
+        separator.configure(height=1)
+        separator.pack(fill=tk.X, pady=(10, 5))
+
+        # Label
+        fav_label = self.style_manager.create_styled_label(
+            parent,
+            "⭐ Más usados:",
+            "small"
+        )
+        fav_label.configure(bg=self.style_manager.colors["bg_card"])
+        fav_label.pack(anchor="w", pady=(0, 5))
+
+        # Frame para favoritos
+        fav_frame = self.style_manager.create_styled_frame(parent, "card")
+        fav_frame.pack(fill=tk.X)
+
+        # Emoticones más comunes
+        common_emojis = ["😀", "😊", "❤️", "👍", "🎉", "💯", "🔥", "✨", "🚀", "💪"]
+
+        for i, emoji in enumerate(common_emojis):
+            btn = tk.Button(
+                fav_frame,
+                text=emoji,
+                font=("Segoe UI Emoji", 16),
+                bg=self.style_manager.colors["bg_card"],
+                fg=self.style_manager.colors["text_primary"],
+                border=0,
+                pady=5,
+                padx=5,
+                cursor="hand2",
+                relief="flat",
+                command=lambda e=emoji: self._insert_emoji(e)
+            )
+            btn.grid(row=0, column=i, padx=2, pady=2)
+
+            # Efecto hover
+            self.style_manager._add_hover_effect(
+                btn,
+                self.style_manager.colors["hover"],
+                self.style_manager.colors["bg_card"]
+            )
+
+    def _toggle_menu(self):
+        """
+        Alterna la visibilidad del menú de emoticones
+        """
+        if self.is_expanded:
+            # Contraer
+            self.emoji_container.pack_forget()
+            self.toggle_btn.configure(text="😀 Emoticones ▼")
+            self.is_expanded = False
+        else:
+            # Expandir
+            self.emoji_container.pack(fill=tk.X, pady=(0, 10))
+            self.toggle_btn.configure(text="😀 Emoticones ▲")
+            self.is_expanded = True
+
+    def _insert_emoji(self, emoji: str):
+        """
+        Inserta un emoji usando el callback
+
+        Args:
+            emoji: Emoji a insertar
+        """
+        if self.insert_callback:
+            self.insert_callback(emoji)
+
+    def _show_help(self):
+        """
+        Muestra ayuda sobre el uso de emoticones
+        """
+        help_text = """🎯 Ayuda - Menú de Emoticones
+
+✨ Cómo usar:
+• Haz clic en cualquier emoji para insertarlo
+• Navega por las categorías usando las pestañas
+• Los más usados están en la parte inferior
+
+📱 Soporte mejorado:
+• Todos los emoticones son compatibles
+• Se envían correctamente por WhatsApp
+• Funcionan en cualquier dispositivo
+
+💡 Consejo:
+Usa emoticones para hacer tus mensajes más expresivos y amigables."""
+
+        messagebox.showinfo("😀 Ayuda - Emoticones", help_text)
 
 
 class NavigationSidebar:

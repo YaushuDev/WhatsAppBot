@@ -1,14 +1,17 @@
 # whatsapp_bot.py
 """
-Bot de WhatsApp automatizado mejorado
+Bot de WhatsApp automatizado con soporte completo para emoticones
 Maneja la automatización del envío de mensajes a través de WhatsApp Web usando Selenium.
-Soporta envío robusto de mensajes con texto e imágenes por separado para mayor confiabilidad.
-Incluye gestión de contactos, control de intervalos y manejo de errores mejorado.
+Incluye soporte robusto para emoticones y caracteres Unicode mediante JavaScript injection,
+solucionando las limitaciones de ChromeDriver con caracteres fuera del BMP.
+Soporta envío de mensajes con texto e imágenes por separado para mayor confiabilidad.
 """
 
 import time
 import random
 import os
+import json
+import re
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -23,7 +26,7 @@ from typing import List, Dict, Any, Callable, Optional
 
 class WhatsAppBot:
     """
-    Bot automatizado para WhatsApp Web con soporte robusto para mensajes con texto e imágenes
+    Bot automatizado para WhatsApp Web con soporte completo para emoticones y caracteres Unicode
     """
 
     def __init__(self, status_callback: Optional[Callable] = None):
@@ -45,7 +48,7 @@ class WhatsAppBot:
 
     def _configure_chrome_options(self) -> Options:
         """
-        Configura las opciones de Chrome para el bot
+        Configura las opciones de Chrome para el bot con soporte mejorado para Unicode
 
         Returns:
             Opciones configuradas de Chrome
@@ -63,11 +66,15 @@ class WhatsAppBot:
         options.add_argument("--disable-web-security")
         options.add_argument("--allow-running-insecure-content")
 
+        # Configuración para soporte de Unicode y emoticones
+        options.add_argument("--lang=es")
+        options.add_argument("--accept-lang=es-ES,es,en")
+
         # Configuración de usuario para mantener sesión
         user_data_dir = os.path.join(os.getcwd(), "chrome_user_data")
         options.add_argument(f"--user-data-dir={user_data_dir}")
 
-        # Configuración de medios para imágenes
+        # Configuración de medios para imágenes y Unicode
         prefs = {
             "profile.default_content_setting_values": {
                 "media_stream": 1,
@@ -76,11 +83,70 @@ class WhatsAppBot:
                 "notifications": 1
             },
             "profile.default_content_settings.popups": 0,
-            "profile.managed_default_content_settings.images": 1
+            "profile.managed_default_content_settings.images": 1,
+            "intl.accept_languages": "es-ES,es,en",
+            "intl.charset_default": "UTF-8"
         }
         options.add_experimental_option("prefs", prefs)
 
         return options
+
+    def _has_emoji_or_unicode(self, text: str) -> bool:
+        """
+        Detecta si el texto contiene emoticones o caracteres Unicode especiales
+
+        Args:
+            text: Texto a analizar
+
+        Returns:
+            True si contiene emoticones o caracteres especiales
+        """
+        try:
+            # Patrón para detectar emoticones y caracteres Unicode fuera del BMP
+            emoji_pattern = re.compile(
+                "["
+                "\U0001F600-\U0001F64F"  # emoticones faciales
+                "\U0001F300-\U0001F5FF"  # símbolos & pictogramas
+                "\U0001F680-\U0001F6FF"  # transporte & símbolos de mapa
+                "\U0001F1E0-\U0001F1FF"  # banderas (iOS)
+                "\U00002500-\U00002BEF"  # símbolos varios
+                "\U00002702-\U000027B0"
+                "\U00002702-\U000027B0"
+                "\U000024C2-\U0001F251"
+                "\U0001f926-\U0001f937"
+                "\U00010000-\U0010ffff"
+                "\u2640-\u2642"
+                "\u2600-\u2B55"
+                "\u200d"
+                "\u23cf"
+                "\u23e9"
+                "\u231a"
+                "\ufe0f"  # variaciones de emoji
+                "\u3030"
+                "]+", flags=re.UNICODE)
+
+            return bool(emoji_pattern.search(text))
+        except Exception:
+            # Si hay algún error en la detección, asumir que tiene caracteres especiales
+            return True
+
+    def _escape_unicode_for_js(self, text: str) -> str:
+        """
+        Escapa caracteres Unicode para uso seguro en JavaScript
+
+        Args:
+            text: Texto a escapar
+
+        Returns:
+            Texto escapado para JavaScript
+        """
+        try:
+            # Convertir a JSON para escape automático y luego quitar las comillas
+            escaped = json.dumps(text, ensure_ascii=False)[1:-1]
+            return escaped
+        except Exception:
+            # Fallback: escape manual básico
+            return text.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n')
 
     def _update_status(self, message: str):
         """
@@ -310,9 +376,9 @@ class WhatsAppBot:
             self._update_status(f"Error al buscar contacto {phone_number}: {str(e)}")
             return False
 
-    def _send_text_message(self, message_text: str) -> bool:
+    def _send_text_message_javascript(self, message_text: str) -> bool:
         """
-        Envía un mensaje de texto
+        Envía un mensaje de texto usando JavaScript para soporte completo de emoticones
 
         Args:
             message_text: Texto del mensaje
@@ -321,8 +387,107 @@ class WhatsAppBot:
             True si se envió correctamente
         """
         try:
-            if not self._check_session_alive():
-                return False
+            self._update_status("📝 Enviando mensaje con soporte de emoticones...")
+
+            # Escapar el texto para JavaScript
+            escaped_text = self._escape_unicode_for_js(message_text)
+
+            # Script JavaScript mejorado para envío con emoticones
+            js_script = f"""
+            function sendMessageWithEmojis() {{
+                try {{
+                    // Buscar el campo de mensaje
+                    const messageBox = document.querySelector('[contenteditable="true"][data-tab="10"]') ||
+                                     document.querySelector('[role="textbox"][title*="mensaje"]') ||
+                                     document.querySelector('[data-testid="conversation-compose-box-input"]') ||
+                                     document.querySelector('[contenteditable="true"]:not([data-tab="3"])');
+
+                    if (!messageBox) {{
+                        console.log("No se encontró el campo de mensaje");
+                        return false;
+                    }}
+
+                    // Hacer foco en el campo
+                    messageBox.focus();
+
+                    // Limpiar contenido existente
+                    messageBox.innerHTML = '';
+
+                    // Insertar el texto con emoticones
+                    const textToSend = "{escaped_text}";
+
+                    // Método 1: Insertar como texto plano (preserva emoticones)
+                    const textNode = document.createTextNode(textToSend);
+                    messageBox.appendChild(textNode);
+
+                    // Disparar eventos para que WhatsApp reconozca el cambio
+                    const inputEvent = new InputEvent('input', {{
+                        bubbles: true,
+                        cancelable: true,
+                        data: textToSend
+                    }});
+                    messageBox.dispatchEvent(inputEvent);
+
+                    // Esperar un poco y enviar
+                    setTimeout(() => {{
+                        // Buscar y hacer click en el botón de enviar
+                        const sendButton = document.querySelector('[data-testid="send"]') ||
+                                         document.querySelector('[aria-label*="Enviar"]') ||
+                                         document.querySelector('[title*="Enviar"]') ||
+                                         document.querySelector('span[data-icon="send"]').closest('button');
+
+                        if (sendButton) {{
+                            sendButton.click();
+                            console.log("Mensaje enviado correctamente");
+                            return true;
+                        }} else {{
+                            console.log("No se encontró el botón enviar");
+                            return false;
+                        }}
+                    }}, 500);
+
+                    return true;
+
+                }} catch (error) {{
+                    console.log("Error en sendMessageWithEmojis:", error);
+                    return false;
+                }}
+            }}
+
+            return sendMessageWithEmojis();
+            """
+
+            # Ejecutar el script JavaScript
+            result = self.driver.execute_script(js_script)
+
+            # Esperar a que se complete el envío
+            time.sleep(3)
+
+            if result is not False:
+                self._update_status("✅ Mensaje con emoticones enviado correctamente")
+                return True
+            else:
+                # Fallback al método tradicional si JavaScript falla
+                self._update_status("⚠️ Fallback al método tradicional...")
+                return self._send_text_message_fallback(message_text)
+
+        except Exception as e:
+            self._update_status(f"❌ Error en envío JavaScript: {str(e)}")
+            # Fallback al método tradicional
+            return self._send_text_message_fallback(message_text)
+
+    def _send_text_message_fallback(self, message_text: str) -> bool:
+        """
+        Método de fallback para enviar mensajes sin emoticones
+
+        Args:
+            message_text: Texto del mensaje
+
+        Returns:
+            True si se envió correctamente
+        """
+        try:
+            self._update_status("📝 Enviando con método tradicional...")
 
             # Selectores actualizados para el campo de mensaje
             message_selectors = [
@@ -343,8 +508,11 @@ class WhatsAppBot:
             message_box.clear()
             time.sleep(1)
 
+            # Filtrar caracteres problemáticos para fallback
+            safe_text = self._filter_bmp_characters(message_text)
+
             # Enviar mensaje línea por línea
-            lines = message_text.split('\n')
+            lines = safe_text.split('\n')
             for i, line in enumerate(lines):
                 message_box.send_keys(line)
                 if i < len(lines) - 1:
@@ -355,6 +523,55 @@ class WhatsAppBot:
             time.sleep(3)
 
             return True
+
+        except Exception as e:
+            self._update_status(f"Error en método fallback: {str(e)}")
+            return False
+
+    def _filter_bmp_characters(self, text: str) -> str:
+        """
+        Filtra caracteres que no están en el Basic Multilingual Plane
+
+        Args:
+            text: Texto original
+
+        Returns:
+            Texto filtrado solo con caracteres BMP
+        """
+        try:
+            # Mantener solo caracteres dentro del BMP (U+0000 a U+FFFF)
+            filtered = ''.join(char for char in text if ord(char) <= 0xFFFF)
+
+            # Si se filtraron caracteres, informar
+            if len(filtered) != len(text):
+                self._update_status("⚠️ Algunos emoticones fueron filtrados por compatibilidad")
+
+            return filtered
+        except Exception:
+            # Si hay error, devolver texto original
+            return text
+
+    def _send_text_message(self, message_text: str) -> bool:
+        """
+        Envía un mensaje de texto con soporte inteligente para emoticones
+
+        Args:
+            message_text: Texto del mensaje
+
+        Returns:
+            True si se envió correctamente
+        """
+        try:
+            if not self._check_session_alive():
+                return False
+
+            # Detectar si el mensaje contiene emoticones
+            if self._has_emoji_or_unicode(message_text):
+                self._update_status("😀 Detectados emoticones, usando método avanzado...")
+                return self._send_text_message_javascript(message_text)
+            else:
+                self._update_status("📝 Enviando texto simple...")
+                return self._send_text_message_fallback(message_text)
 
         except Exception as e:
             self._update_status(f"Error al enviar mensaje de texto: {str(e)}")
@@ -671,7 +888,11 @@ class WhatsAppBot:
                     message_text = selected_message.get('texto', '')[:50] + "..." if len(
                         selected_message.get('texto', '')) > 50 else selected_message.get('texto', '')
                     has_image = selected_message.get('imagen') is not None
-                    message_info = f"'{message_text}'" + (" 📷" if has_image else "")
+                    has_emoji = self._has_emoji_or_unicode(selected_message.get('texto', ''))
+
+                    emoji_indicator = " 😀" if has_emoji else ""
+                    image_indicator = " 📷" if has_image else ""
+                    message_info = f"'{message_text}'{emoji_indicator}{image_indicator}"
 
                     self._update_status(f"📱 ({i + 1}/{len(phone_numbers)}) Enviando a {phone_number}: {message_info}")
 
