@@ -3,19 +3,568 @@
 Pestañas del Bot de WhatsApp
 Implementa la lógica específica de cada pestaña (contactos, mensajes, automatización)
 utilizando los componentes reutilizables para mantener el código organizado y conciso.
-Incluye un sistema de sub-pestañas para la gestión de contactos con funcionalidad manual
-y carga masiva desde archivos Excel.
+Incluye soporte completo para mensajes con texto e imágenes, gestión de contactos
+con funcionalidad manual y carga masiva desde archivos Excel.
 """
 
 import tkinter as tk
-from tkinter import scrolledtext
+from tkinter import scrolledtext, filedialog
 import threading
+import os
+from PIL import Image, ImageTk
 from gui_styles import StyleManager
 from gui_components import (TabHeader, ListManager, InputSection, StatsDisplay,
                             ActivityLog, SubTabNavigator, ContactListManager,
                             ContactInputSection, ExcelUploadComponent, ContactEditDialog,
                             show_validation_error, show_success_message,
                             show_error_message, show_confirmation_dialog)
+
+
+class MessageInputSection:
+    """
+    Sección especializada para entrada de mensajes con texto e imagen
+    """
+
+    def __init__(self, parent, style_manager: StyleManager, button_callback=None):
+        """
+        Inicializa la sección de entrada de mensajes
+
+        Args:
+            parent: Widget padre
+            style_manager: Gestor de estilos
+            button_callback: Función del botón
+        """
+        self.style_manager = style_manager
+        self.selected_image_path = None
+
+        # Frame principal
+        self.input_frame = style_manager.create_styled_labelframe(parent, "💬 Nuevo mensaje:")
+        self.input_frame.pack(fill=tk.X, padx=25, pady=(0, 20))
+
+        # Contenido interno
+        content_frame = style_manager.create_styled_frame(self.input_frame)
+        content_frame.pack(fill=tk.X, padx=15, pady=15)
+
+        # Área de texto para el mensaje
+        text_label = style_manager.create_styled_label(content_frame, "Texto del mensaje:", "normal")
+        text_label.pack(anchor="w")
+
+        self.text_widget = scrolledtext.ScrolledText(
+            content_frame,
+            height=4,
+            font=style_manager.fonts["normal"],
+            bg=style_manager.colors["bg_card"],
+            fg=style_manager.colors["text_primary"],
+            border=1,
+            relief="solid",
+            wrap=tk.WORD,
+            highlightthickness=1,
+            highlightcolor=style_manager.colors["accent"],
+            highlightbackground=style_manager.colors["border"],
+            insertbackground=style_manager.colors["text_primary"]
+        )
+        self.text_widget.pack(fill=tk.X, pady=(5, 15))
+
+        # Sección de imagen
+        self._create_image_section(content_frame)
+
+        # Botón agregar
+        if button_callback:
+            button = style_manager.create_styled_button(
+                content_frame,
+                "➕ Agregar Mensaje",
+                button_callback,
+                "accent"
+            )
+            button.pack(pady=(10, 0))
+
+    def _create_image_section(self, parent):
+        """
+        Crea la sección de manejo de imágenes
+        """
+        # Frame para imagen
+        image_frame = self.style_manager.create_styled_frame(parent)
+        image_frame.pack(fill=tk.X, pady=(0, 10))
+
+        # Label y botón de imagen en la misma línea
+        image_header = self.style_manager.create_styled_frame(image_frame)
+        image_header.pack(fill=tk.X, pady=(0, 10))
+
+        image_label = self.style_manager.create_styled_label(image_header, "Imagen (opcional):", "normal")
+        image_label.pack(side=tk.LEFT)
+
+        # Botones de imagen
+        buttons_frame = self.style_manager.create_styled_frame(image_header)
+        buttons_frame.pack(side=tk.RIGHT)
+
+        self.select_image_btn = self.style_manager.create_styled_button(
+            buttons_frame,
+            "📁 Seleccionar",
+            self._select_image,
+            "normal"
+        )
+        self.select_image_btn.pack(side=tk.LEFT, padx=(0, 10))
+
+        self.clear_image_btn = self.style_manager.create_styled_button(
+            buttons_frame,
+            "🗑️ Quitar",
+            self._clear_image,
+            "error"
+        )
+        self.clear_image_btn.pack(side=tk.LEFT)
+        self.clear_image_btn.configure(state="disabled")
+
+        # Vista previa de imagen
+        self.preview_frame = self.style_manager.create_styled_frame(image_frame, "card")
+        self.preview_frame.configure(relief="solid", bd=1, height=120)
+        self.preview_frame.pack(fill=tk.X)
+        self.preview_frame.pack_propagate(False)
+
+        # Label de estado de imagen
+        self.image_status_label = self.style_manager.create_styled_label(
+            self.preview_frame,
+            "No hay imagen seleccionada",
+            "secondary"
+        )
+        self.image_status_label.configure(bg=self.style_manager.colors["bg_card"])
+        self.image_status_label.pack(expand=True)
+
+    def _select_image(self):
+        """
+        Abre el diálogo para seleccionar imagen
+        """
+        file_types = [
+            ("Imágenes", "*.jpg;*.jpeg;*.png;*.gif;*.bmp"),
+            ("JPEG", "*.jpg;*.jpeg"),
+            ("PNG", "*.png"),
+            ("GIF", "*.gif"),
+            ("Todos los archivos", "*.*")
+        ]
+
+        image_path = filedialog.askopenfilename(
+            title="Seleccionar imagen para el mensaje",
+            filetypes=file_types
+        )
+
+        if image_path:
+            # Validar que sea una imagen
+            if self._validate_image(image_path):
+                self.selected_image_path = image_path
+                self._update_image_preview()
+                self.clear_image_btn.configure(state="normal")
+            else:
+                show_error_message("El archivo seleccionado no es una imagen válida")
+
+    def _clear_image(self):
+        """
+        Quita la imagen seleccionada
+        """
+        self.selected_image_path = None
+        self._update_image_preview()
+        self.clear_image_btn.configure(state="disabled")
+
+    def _validate_image(self, image_path):
+        """
+        Valida que el archivo sea una imagen válida
+
+        Args:
+            image_path: Ruta de la imagen
+
+        Returns:
+            True si es válida
+        """
+        try:
+            with Image.open(image_path) as img:
+                img.verify()
+            return True
+        except Exception:
+            return False
+
+    def _update_image_preview(self):
+        """
+        Actualiza la vista previa de la imagen
+        """
+        # Limpiar preview actual
+        for widget in self.preview_frame.winfo_children():
+            widget.destroy()
+
+        if self.selected_image_path and os.path.exists(self.selected_image_path):
+            try:
+                # Cargar y redimensionar imagen
+                with Image.open(self.selected_image_path) as img:
+                    # Calcular dimensiones manteniendo proporción
+                    max_width, max_height = 200, 100
+                    img.thumbnail((max_width, max_height), Image.Resampling.LANCZOS)
+
+                    # Convertir para Tkinter
+                    photo = ImageTk.PhotoImage(img)
+
+                    # Mostrar imagen
+                    image_label = tk.Label(
+                        self.preview_frame,
+                        image=photo,
+                        bg=self.style_manager.colors["bg_card"]
+                    )
+                    image_label.image = photo  # Mantener referencia
+                    image_label.pack(expand=True)
+
+                    # Info de la imagen
+                    filename = os.path.basename(self.selected_image_path)
+                    info_label = self.style_manager.create_styled_label(
+                        self.preview_frame,
+                        f"📷 {filename}",
+                        "small"
+                    )
+                    info_label.configure(bg=self.style_manager.colors["bg_card"])
+                    info_label.pack()
+
+            except Exception as e:
+                self._show_no_image_message("Error al cargar la imagen")
+        else:
+            self._show_no_image_message("No hay imagen seleccionada")
+
+    def _show_no_image_message(self, message="No hay imagen seleccionada"):
+        """
+        Muestra mensaje cuando no hay imagen
+
+        Args:
+            message: Mensaje a mostrar
+        """
+        self.image_status_label = self.style_manager.create_styled_label(
+            self.preview_frame,
+            message,
+            "secondary"
+        )
+        self.image_status_label.configure(bg=self.style_manager.colors["bg_card"])
+        self.image_status_label.pack(expand=True)
+
+    def get_values(self):
+        """
+        Obtiene los valores de texto e imagen
+
+        Returns:
+            Tupla (texto, ruta_imagen)
+        """
+        text = self.text_widget.get(1.0, tk.END).strip()
+        return text, self.selected_image_path
+
+    def clear_values(self):
+        """
+        Limpia ambos campos
+        """
+        self.text_widget.delete(1.0, tk.END)
+        self._clear_image()
+
+    def set_values(self, text, image_path=None):
+        """
+        Establece valores en los campos
+
+        Args:
+            text: Texto del mensaje
+            image_path: Ruta de la imagen (opcional)
+        """
+        self.clear_values()
+        self.text_widget.insert(1.0, text)
+        if image_path and os.path.exists(image_path):
+            self.selected_image_path = image_path
+            self._update_image_preview()
+            self.clear_image_btn.configure(state="normal")
+
+    def focus_text(self):
+        """
+        Pone el foco en el área de texto
+        """
+        self.text_widget.focus_set()
+
+
+class MessageEditDialog:
+    """
+    Diálogo para editar mensajes con texto e imagen
+    """
+
+    def __init__(self, parent, style_manager: StyleManager, message_data, data_manager, callback):
+        """
+        Inicializa el diálogo de edición
+
+        Args:
+            parent: Widget padre
+            style_manager: Gestor de estilos
+            message_data: Datos del mensaje {'texto': str, 'imagen': str}
+            data_manager: Gestor de datos para obtener rutas de imágenes
+            callback: Función callback con los nuevos datos
+        """
+        self.style_manager = style_manager
+        self.data_manager = data_manager
+        self.callback = callback
+        self.result = None
+        self.selected_image_path = None
+        self.original_image_filename = message_data.get('imagen')
+
+        # Crear ventana modal
+        self.dialog = tk.Toplevel(parent)
+        self.style_manager.configure_window(
+            self.dialog,
+            "Editar Mensaje",
+            "500x600"
+        )
+        self.dialog.grab_set()
+        self.dialog.transient(parent)
+
+        # Centrar la ventana
+        self.dialog.update_idletasks()
+        x = (self.dialog.winfo_screenwidth() // 2) - (500 // 2)
+        y = (self.dialog.winfo_screenheight() // 2) - (600 // 2)
+        self.dialog.geometry(f"500x600+{x}+{y}")
+
+        self._create_content(message_data)
+
+    def _create_content(self, message_data):
+        """
+        Crea el contenido del diálogo
+
+        Args:
+            message_data: Datos del mensaje
+        """
+        # Frame principal
+        main_frame = self.style_manager.create_styled_frame(self.dialog)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+
+        # Título
+        title_label = self.style_manager.create_styled_label(
+            main_frame,
+            "Editar Mensaje",
+            "heading"
+        )
+        title_label.pack(pady=(0, 20))
+
+        # Campo texto
+        text_label = self.style_manager.create_styled_label(main_frame, "Texto del mensaje:", "normal")
+        text_label.pack(anchor="w")
+
+        self.text_widget = scrolledtext.ScrolledText(
+            main_frame,
+            height=6,
+            font=self.style_manager.fonts["normal"],
+            bg=self.style_manager.colors["bg_card"],
+            fg=self.style_manager.colors["text_primary"],
+            border=1,
+            relief="solid",
+            wrap=tk.WORD,
+            highlightthickness=1,
+            highlightcolor=self.style_manager.colors["accent"],
+            highlightbackground=self.style_manager.colors["border"],
+            insertbackground=self.style_manager.colors["text_primary"]
+        )
+        self.text_widget.pack(fill=tk.X, pady=(5, 20))
+        self.text_widget.insert(1.0, message_data.get('texto', ''))
+
+        # Sección de imagen
+        self._create_image_section(main_frame, message_data)
+
+        # Frame para botones
+        buttons_frame = self.style_manager.create_styled_frame(main_frame)
+        buttons_frame.pack(fill=tk.X, pady=(20, 0))
+
+        # Botón guardar
+        save_btn = self.style_manager.create_styled_button(
+            buttons_frame,
+            "💾 Guardar",
+            self._save_changes,
+            "success"
+        )
+        save_btn.pack(side=tk.LEFT, padx=(0, 10))
+
+        # Botón cancelar
+        cancel_btn = self.style_manager.create_styled_button(
+            buttons_frame,
+            "❌ Cancelar",
+            self._cancel,
+            "error"
+        )
+        cancel_btn.pack(side=tk.LEFT)
+
+        # Configurar eventos
+        self.dialog.bind("<Escape>", lambda e: self._cancel())
+
+        # Foco inicial
+        self.text_widget.focus_set()
+
+    def _create_image_section(self, parent, message_data):
+        """
+        Crea la sección de manejo de imágenes
+
+        Args:
+            parent: Widget padre
+            message_data: Datos del mensaje
+        """
+        # Label de imagen
+        image_label = self.style_manager.create_styled_label(parent, "Imagen:", "normal")
+        image_label.pack(anchor="w")
+
+        # Botones de imagen
+        buttons_frame = self.style_manager.create_styled_frame(parent)
+        buttons_frame.pack(fill=tk.X, pady=(5, 10))
+
+        self.select_image_btn = self.style_manager.create_styled_button(
+            buttons_frame,
+            "📁 Cambiar imagen",
+            self._select_image,
+            "normal"
+        )
+        self.select_image_btn.pack(side=tk.LEFT, padx=(0, 10))
+
+        self.clear_image_btn = self.style_manager.create_styled_button(
+            buttons_frame,
+            "🗑️ Quitar imagen",
+            self._clear_image,
+            "error"
+        )
+        self.clear_image_btn.pack(side=tk.LEFT)
+
+        # Vista previa de imagen
+        self.preview_frame = self.style_manager.create_styled_frame(parent, "card")
+        self.preview_frame.configure(relief="solid", bd=1, height=150)
+        self.preview_frame.pack(fill=tk.X, pady=(0, 10))
+        self.preview_frame.pack_propagate(False)
+
+        # Cargar imagen actual si existe
+        if message_data.get('imagen'):
+            current_image_path = self.data_manager.get_image_path(message_data['imagen'])
+            if current_image_path:
+                self.selected_image_path = current_image_path
+                self.clear_image_btn.configure(state="normal")
+
+        self._update_image_preview()
+
+    def _select_image(self):
+        """
+        Abre el diálogo para seleccionar imagen
+        """
+        file_types = [
+            ("Imágenes", "*.jpg;*.jpeg;*.png;*.gif;*.bmp"),
+            ("JPEG", "*.jpg;*.jpeg"),
+            ("PNG", "*.png"),
+            ("GIF", "*.gif"),
+            ("Todos los archivos", "*.*")
+        ]
+
+        image_path = filedialog.askopenfilename(
+            title="Seleccionar nueva imagen",
+            filetypes=file_types
+        )
+
+        if image_path:
+            if self._validate_image(image_path):
+                self.selected_image_path = image_path
+                self._update_image_preview()
+                self.clear_image_btn.configure(state="normal")
+            else:
+                show_error_message("El archivo seleccionado no es una imagen válida")
+
+    def _clear_image(self):
+        """
+        Quita la imagen seleccionada
+        """
+        self.selected_image_path = None
+        self._update_image_preview()
+        self.clear_image_btn.configure(state="disabled")
+
+    def _validate_image(self, image_path):
+        """
+        Valida que el archivo sea una imagen válida
+        """
+        try:
+            with Image.open(image_path) as img:
+                img.verify()
+            return True
+        except Exception:
+            return False
+
+    def _update_image_preview(self):
+        """
+        Actualiza la vista previa de la imagen
+        """
+        # Limpiar preview actual
+        for widget in self.preview_frame.winfo_children():
+            widget.destroy()
+
+        if self.selected_image_path and os.path.exists(self.selected_image_path):
+            try:
+                # Cargar y redimensionar imagen
+                with Image.open(self.selected_image_path) as img:
+                    # Calcular dimensiones manteniendo proporción
+                    max_width, max_height = 250, 130
+                    img.thumbnail((max_width, max_height), Image.Resampling.LANCZOS)
+
+                    # Convertir para Tkinter
+                    photo = ImageTk.PhotoImage(img)
+
+                    # Mostrar imagen
+                    image_label = tk.Label(
+                        self.preview_frame,
+                        image=photo,
+                        bg=self.style_manager.colors["bg_card"]
+                    )
+                    image_label.image = photo  # Mantener referencia
+                    image_label.pack(expand=True)
+
+                    # Info de la imagen
+                    filename = os.path.basename(self.selected_image_path)
+                    info_label = self.style_manager.create_styled_label(
+                        self.preview_frame,
+                        f"📷 {filename}",
+                        "small"
+                    )
+                    info_label.configure(bg=self.style_manager.colors["bg_card"])
+                    info_label.pack()
+
+            except Exception as e:
+                self._show_no_image_message("Error al cargar la imagen")
+        else:
+            self._show_no_image_message("Sin imagen")
+
+    def _show_no_image_message(self, message="Sin imagen"):
+        """
+        Muestra mensaje cuando no hay imagen
+        """
+        status_label = self.style_manager.create_styled_label(
+            self.preview_frame,
+            message,
+            "secondary"
+        )
+        status_label.configure(bg=self.style_manager.colors["bg_card"])
+        status_label.pack(expand=True)
+
+    def _save_changes(self):
+        """
+        Guarda los cambios y cierra el diálogo
+        """
+        text = self.text_widget.get(1.0, tk.END).strip()
+
+        if not text:
+            show_validation_error("El texto del mensaje es obligatorio")
+            return
+
+        # Determinar cambio de imagen
+        new_image_path = None
+        if self.selected_image_path != self.data_manager.get_image_path(self.original_image_filename):
+            new_image_path = self.selected_image_path
+
+        self.result = {
+            'texto': text,
+            'nueva_imagen': new_image_path
+        }
+
+        if self.callback:
+            self.callback(self.result)
+        self.dialog.destroy()
+
+    def _cancel(self):
+        """
+        Cancela la edición y cierra el diálogo
+        """
+        self.result = None
+        self.dialog.destroy()
 
 
 class ManualManagementSubTab:
@@ -410,7 +959,7 @@ class NumbersTab:
 
 class MessagesTab:
     """
-    Pestaña de gestión de mensajes (sin cambios significativos)
+    Pestaña de gestión de mensajes con soporte para texto e imágenes
     """
 
     def __init__(self, parent, style_manager: StyleManager, data_manager):
@@ -433,16 +982,13 @@ class MessagesTab:
             self.frame,
             style_manager,
             "Gestión de Mensajes",
-            "Crea y gestiona los mensajes que el bot enviará aleatoriamente"
+            "Crea mensajes con texto e imágenes que el bot enviará aleatoriamente. Usa emoticones para personalizar 😊🎉"
         )
 
         # Sección de entrada para mensajes
-        self.input_section = InputSection(
+        self.input_section = MessageInputSection(
             self.frame,
             style_manager,
-            "Nuevo mensaje:",
-            "text",
-            "Agregar Mensaje",
             self._add_message
         )
 
@@ -460,18 +1006,24 @@ class MessagesTab:
 
     def _add_message(self):
         """
-        Agrega un mensaje
+        Agrega un mensaje con texto e imagen opcional
         """
-        message = self.input_section.get_value()
+        text, image_path = self.input_section.get_values()
 
-        if not message:
-            show_validation_error("Por favor ingresa un mensaje")
+        if not text:
+            show_validation_error("Por favor ingresa el texto del mensaje")
+            self.input_section.focus_text()
             return
 
-        if self.data_manager.add_message(message):
-            self.input_section.clear_value()
+        if self.data_manager.add_message(text, image_path):
+            self.input_section.clear_values()
+            self.input_section.focus_text()
             self._refresh_messages()
-            show_success_message("Mensaje agregado correctamente")
+
+            if image_path:
+                show_success_message("Mensaje con imagen agregado correctamente")
+            else:
+                show_success_message("Mensaje agregado correctamente")
         else:
             show_error_message("Error al agregar el mensaje")
 
@@ -486,69 +1038,32 @@ class MessagesTab:
             return
 
         # Obtener el mensaje completo
-        messages = self.data_manager.get_messages()
-        if index >= len(messages):
+        message_data = self.data_manager.get_message_by_index(index)
+        if not message_data:
             show_error_message("Mensaje no encontrado")
             return
 
-        current_message = messages[index]
+        # Crear y mostrar diálogo de edición
+        def on_edit_complete(new_data):
+            if new_data:
+                success = self.data_manager.update_message(
+                    index,
+                    new_data['texto'],
+                    new_data.get('nueva_imagen')
+                )
+                if success:
+                    self._refresh_messages()
+                    show_success_message("Mensaje actualizado correctamente")
+                else:
+                    show_error_message("Error al actualizar el mensaje")
 
-        # Crear ventana de edición
-        self._create_edit_window(index, current_message)
-
-    def _create_edit_window(self, index, current_message):
-        """
-        Crea la ventana de edición de mensaje
-
-        Args:
-            index: Índice del mensaje
-            current_message: Mensaje actual
-        """
-        edit_window = tk.Toplevel()
-        self.style_manager.configure_window(
-            edit_window,
-            "Editar Mensaje",
-            "400x300"
+        MessageEditDialog(
+            self.frame.winfo_toplevel(),
+            self.style_manager,
+            message_data,
+            self.data_manager,
+            on_edit_complete
         )
-        edit_window.grab_set()
-
-        # Etiqueta
-        label = self.style_manager.create_styled_label(
-            edit_window,
-            "Editar mensaje:",
-            "normal"
-        )
-        label.pack(pady=10)
-
-        # Área de texto
-        edit_text = scrolledtext.ScrolledText(
-            edit_window,
-            height=10,
-            font=self.style_manager.fonts["normal"],
-            bg=self.style_manager.colors["bg_secondary"],
-            fg=self.style_manager.colors["text_primary"],
-            wrap=tk.WORD
-        )
-        edit_text.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        edit_text.insert(1.0, current_message)
-
-        # Botón guardar
-        def save_edit():
-            new_message = edit_text.get(1.0, tk.END).strip()
-            if new_message and self.data_manager.update_message(index, new_message):
-                self._refresh_messages()
-                edit_window.destroy()
-                show_success_message("Mensaje actualizado correctamente")
-            else:
-                show_error_message("Error al actualizar el mensaje")
-
-        save_btn = self.style_manager.create_styled_button(
-            edit_window,
-            "Guardar",
-            save_edit,
-            "accent"
-        )
-        save_btn.pack(pady=10)
 
     def _delete_message(self):
         """
@@ -560,20 +1075,31 @@ class MessagesTab:
             show_validation_error("Por favor selecciona un mensaje para eliminar")
             return
 
-        if show_confirmation_dialog("¿Eliminar el mensaje seleccionado?"):
+        if show_confirmation_dialog(
+                "¿Eliminar el mensaje seleccionado?\n\nSi tiene imagen asociada, también se eliminará."):
             if self.data_manager.remove_message(index):
                 self._refresh_messages()
                 show_success_message("Mensaje eliminado correctamente")
 
     def _refresh_messages(self):
         """
-        Actualiza la lista de mensajes
+        Actualiza la lista de mensajes mostrando indicador de imagen
         """
         messages = self.data_manager.get_messages()
-        # Mostrar solo las primeras 50 caracteres para la lista
         display_messages = []
+
         for i, message in enumerate(messages):
-            display_text = message[:50] + "..." if len(message) > 50 else message
+            text = message.get("texto", "")
+            has_image = message.get("imagen") is not None
+
+            # Mostrar solo las primeras 45 caracteres para dejar espacio al icono
+            display_text = text[:45] + "..." if len(text) > 45 else text
+
+            # Agregar indicador de imagen
+            if has_image:
+                display_text = f"📷 {display_text}"
+
+            # Número del mensaje
             display_messages.append(f"{i + 1}. {display_text}")
 
         self.list_manager.clear_and_populate(display_messages)

@@ -1,107 +1,29 @@
 # whatsapp_bot.py
 """
-Bot de automatización para WhatsApp Web mejorado
-Utiliza Selenium para controlar WhatsApp Web y enviar mensajes automáticamente.
-El bot envía UN mensaje aleatorio a cada número de la lista, una sola vez por sesión.
-Incluye detección robusta de cierre de Chrome y mejor control de automatización.
-Maneja correctamente múltiples ejecuciones y reconexiones de Chrome.
+Bot de WhatsApp automatizado mejorado
+Maneja la automatización del envío de mensajes a través de WhatsApp Web usando Selenium.
+Soporta envío robusto de mensajes con texto e imágenes por separado para mayor confiabilidad.
+Incluye gestión de contactos, control de intervalos y manejo de errores mejorado.
 """
 
 import time
 import random
-import threading
 import os
-import tempfile
-import shutil
-import uuid
-from typing import List, Callable, Optional, Set
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.action_chains import ActionChains
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException, \
-    InvalidSessionIdException
-
-
-class ChromeProfileManager:
-    """
-    Gestor de perfiles de Chrome para evitar conflictos
-    """
-
-    def __init__(self):
-        """
-        Inicializa el gestor de perfiles
-        """
-        self.profile_path = None
-        self.temp_profile = False
-
-    def create_profile_path(self) -> str:
-        """
-        Crea un directorio de perfil único para Chrome
-
-        Returns:
-            Ruta del directorio de perfil
-        """
-        try:
-            # Intentar usar el directorio predeterminado
-            default_profile = os.path.join(os.getcwd(), "chrome_profile")
-
-            # Si no existe, crearlo
-            if not os.path.exists(default_profile):
-                os.makedirs(default_profile, exist_ok=True)
-                self.profile_path = default_profile
-                self.temp_profile = False
-                return self.profile_path
-
-            # Si existe pero está en uso, crear uno temporal
-            if self._is_profile_in_use(default_profile):
-                temp_dir = tempfile.mkdtemp(prefix="whatsapp_bot_")
-                self.profile_path = temp_dir
-                self.temp_profile = True
-                return self.profile_path
-
-            # Si está disponible, usarlo
-            self.profile_path = default_profile
-            self.temp_profile = False
-            return self.profile_path
-
-        except Exception:
-            # En caso de error, crear uno temporal
-            temp_dir = tempfile.mkdtemp(prefix="whatsapp_bot_")
-            self.profile_path = temp_dir
-            self.temp_profile = True
-            return self.profile_path
-
-    def _is_profile_in_use(self, profile_path: str) -> bool:
-        """
-        Verifica si un perfil está en uso
-
-        Args:
-            profile_path: Ruta del perfil a verificar
-
-        Returns:
-            True si está en uso
-        """
-        lock_file = os.path.join(profile_path, "SingletonLock")
-        return os.path.exists(lock_file)
-
-    def cleanup(self):
-        """
-        Limpia el perfil temporal si fue creado
-        """
-        if self.temp_profile and self.profile_path and os.path.exists(self.profile_path):
-            try:
-                shutil.rmtree(self.profile_path)
-            except Exception:
-                pass  # Ignorar errores de limpieza
+    ElementClickInterceptedException
+from typing import List, Dict, Any, Callable, Optional
 
 
 class WhatsAppBot:
     """
-    Bot para automatizar el envío de mensajes en WhatsApp Web
-    Envía un mensaje único a cada número de la lista
+    Bot automatizado para WhatsApp Web con soporte robusto para mensajes con texto e imágenes
     """
 
     def __init__(self, status_callback: Optional[Callable] = None):
@@ -109,586 +31,724 @@ class WhatsAppBot:
         Inicializa el bot de WhatsApp
 
         Args:
-            status_callback: Función callback para reportar el estado
+            status_callback: Función callback para actualizar el estado en la GUI
         """
         self.driver = None
         self.is_running = False
-        self.should_stop = False
         self.status_callback = status_callback
-        self.wait_time = 10
-        self.profile_manager = ChromeProfileManager()
-        self.automation_thread = None
+        self.wait_timeout = 20
+        self.current_session_contacts = []
+        self.current_session_messages = []
 
-        # Control de números enviados
-        self.sent_numbers: Set[str] = set()
-        self.total_numbers = 0
-        self.messages_sent = 0
+        # Configuración de Chrome
+        self.chrome_options = self._configure_chrome_options()
 
-        # Control de estado del navegador
-        self.browser_closed = False
-        self.session_active = False
+    def _configure_chrome_options(self) -> Options:
+        """
+        Configura las opciones de Chrome para el bot
+
+        Returns:
+            Opciones configuradas de Chrome
+        """
+        options = Options()
+
+        # Configuración básica
+        options.add_argument("--disable-blink-features=AutomationControlled")
+        options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        options.add_experimental_option('useAutomationExtension', False)
+        options.add_argument("--disable-extensions")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--disable-web-security")
+        options.add_argument("--allow-running-insecure-content")
+
+        # Configuración de usuario para mantener sesión
+        user_data_dir = os.path.join(os.getcwd(), "chrome_user_data")
+        options.add_argument(f"--user-data-dir={user_data_dir}")
+
+        # Configuración de medios para imágenes
+        prefs = {
+            "profile.default_content_setting_values": {
+                "media_stream": 1,
+                "media_stream_camera": 1,
+                "media_stream_mic": 1,
+                "notifications": 1
+            },
+            "profile.default_content_settings.popups": 0,
+            "profile.managed_default_content_settings.images": 1
+        }
+        options.add_experimental_option("prefs", prefs)
+
+        return options
 
     def _update_status(self, message: str):
         """
-        Actualiza el estado y llama al callback si existe
+        Actualiza el estado y notifica a la GUI
 
         Args:
             message: Mensaje de estado
         """
+        print(f"[Bot] {message}")
         if self.status_callback:
             self.status_callback(message)
-        print(f"[WhatsApp Bot] {message}")
 
-    def _cleanup_existing_processes(self):
+    def _initialize_driver(self) -> bool:
         """
-        Intenta cerrar procesos de Chrome existentes
-        """
-        try:
-            import psutil
-            for proc in psutil.process_iter(['pid', 'name']):
-                if 'chrome' in proc.info['name'].lower():
-                    try:
-                        proc.terminate()
-                        proc.wait(timeout=3)
-                    except:
-                        pass
-        except ImportError:
-            # psutil no está disponible, continuar sin limpieza
-            pass
-        except Exception:
-            # Ignorar errores de limpieza
-            pass
-
-    def _is_browser_alive(self) -> bool:
-        """
-        Verifica si el navegador sigue activo
+        Inicializa el driver de Chrome
 
         Returns:
-            True si el navegador está activo
+            True si se inicializó correctamente
+        """
+        try:
+            self._update_status("Iniciando navegador...")
+            self.driver = webdriver.Chrome(options=self.chrome_options)
+            self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+            self.driver.maximize_window()
+            return True
+        except Exception as e:
+            self._update_status(f"Error al inicializar navegador: {str(e)}")
+            return False
+
+    def _check_session_alive(self) -> bool:
+        """
+        Verifica si la sesión del navegador sigue activa
+
+        Returns:
+            True si la sesión está activa
         """
         try:
             if not self.driver:
                 return False
-
-            # Intentar ejecutar un comando simple
-            self.driver.current_url
+            # Intentar acceder al título de la página
+            _ = self.driver.title
             return True
-        except (WebDriverException, InvalidSessionIdException):
-            self.browser_closed = True
-            self.session_active = False
-            return False
         except Exception:
             return False
 
-    def _force_close_driver(self):
+    def _wait_for_element(self, selectors: List[str], timeout: int = 15, clickable: bool = False) -> Optional[Any]:
         """
-        Fuerza el cierre del driver y limpia la sesión
+        Espera a que aparezca un elemento usando múltiples selectores
+
+        Args:
+            selectors: Lista de selectores XPath a probar
+            timeout: Tiempo máximo de espera
+            clickable: Si el elemento debe ser clickeable
+
+        Returns:
+            Elemento encontrado o None
         """
-        if self.driver:
+        for selector in selectors:
             try:
-                self.driver.quit()
-            except:
-                pass
-            finally:
-                self.driver = None
-                self.session_active = False
-                self.browser_closed = False
+                wait = WebDriverWait(self.driver, timeout)
+                if clickable:
+                    element = wait.until(EC.element_to_be_clickable((By.XPATH, selector)))
+                else:
+                    element = wait.until(EC.presence_of_element_located((By.XPATH, selector)))
+                return element
+            except TimeoutException:
+                continue
+        return None
 
-    def _create_new_driver(self) -> bool:
+    def _safe_click(self, element, max_attempts: int = 3) -> bool:
         """
-        Crea un nuevo driver de Chrome
+        Hace click de forma segura evitando interceptaciones
+
+        Args:
+            element: Elemento a hacer click
+            max_attempts: Máximo número de intentos
 
         Returns:
-            True si se creó correctamente
+            True si el click fue exitoso
         """
-        try:
-            # Cerrar driver existente si hay uno
-            self._force_close_driver()
+        for attempt in range(max_attempts):
+            try:
+                # Scroll al elemento si es necesario
+                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
+                time.sleep(0.5)
 
-            # Limpiar procesos previos
-            self._cleanup_existing_processes()
-
-            # Esperar un momento para que se liberen los recursos
-            time.sleep(2)
-
-            # Obtener ruta de perfil
-            profile_path = self.profile_manager.create_profile_path()
-
-            # Configuración de Chrome
-            chrome_options = Options()
-            chrome_options.add_argument("--no-sandbox")
-            chrome_options.add_argument("--disable-dev-shm-usage")
-            chrome_options.add_argument("--disable-gpu")
-            chrome_options.add_argument("--disable-extensions")
-            chrome_options.add_argument("--disable-plugins")
-            chrome_options.add_argument("--disable-images")
-            chrome_options.add_argument("--window-size=1200,800")
-            chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-            chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-            chrome_options.add_experimental_option('useAutomationExtension', False)
-
-            # Configurar perfil de usuario
-            chrome_options.add_argument(f"--user-data-dir={profile_path}")
-            chrome_options.add_argument(f"--profile-directory=Default")
-
-            # Configuración adicional para evitar conflictos
-            chrome_options.add_argument("--disable-background-timer-throttling")
-            chrome_options.add_argument("--disable-renderer-backgrounding")
-            chrome_options.add_argument("--disable-backgrounding-occluded-windows")
-            chrome_options.add_argument("--no-first-run")
-            chrome_options.add_argument("--no-default-browser-check")
-
-            # Crear el driver
-            self.driver = webdriver.Chrome(options=chrome_options)
-            self.driver.implicitly_wait(self.wait_time)
-
-            # Ejecutar script para ocultar que es un bot
-            self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-
-            self.browser_closed = False
-            self.session_active = True
-            return True
-
-        except Exception as e:
-            self._update_status(f"Error al crear nuevo driver: {e}")
-            return False
-
-    def setup_driver(self) -> bool:
-        """
-        Configura e inicializa el driver de Chrome
-
-        Returns:
-            True si se configuró correctamente
-        """
-        try:
-            self._update_status("Configurando navegador...")
-
-            # Si ya hay un driver pero la sesión no está activa, crear uno nuevo
-            if self.driver and not self.session_active:
-                self._update_status("Sesión anterior cerrada, creando nueva...")
-                return self._create_new_driver()
-
-            # Si no hay driver, crear uno nuevo
-            if not self.driver:
-                return self._create_new_driver()
-
-            # Si el driver existe y parece activo, verificarlo
-            if self._is_browser_alive():
-                self._update_status("Reutilizando navegador existente")
+                # Intentar click normal
+                element.click()
                 return True
-            else:
-                self._update_status("Navegador existente no responde, creando nuevo...")
-                return self._create_new_driver()
 
-        except Exception as e:
-            self._update_status(f"Error al configurar navegador: {e}")
-            return self._create_new_driver()
+            except ElementClickInterceptedException:
+                try:
+                    # Intentar click con JavaScript
+                    self.driver.execute_script("arguments[0].click();", element)
+                    return True
+                except:
+                    # Intentar con ActionChains
+                    try:
+                        ActionChains(self.driver).move_to_element(element).click().perform()
+                        return True
+                    except:
+                        if attempt < max_attempts - 1:
+                            time.sleep(1)
+                            continue
+                        return False
+            except Exception as e:
+                if attempt < max_attempts - 1:
+                    time.sleep(1)
+                    continue
+                return False
+        return False
 
-    def open_whatsapp(self) -> bool:
+    def _open_whatsapp_web(self) -> bool:
         """
-        Abre WhatsApp Web y espera a que esté listo
+        Abre WhatsApp Web y espera a que se cargue
 
         Returns:
             True si se abrió correctamente
         """
         try:
-            # Asegurar que tenemos un driver activo
-            if not self.setup_driver():
-                return False
-
             self._update_status("Abriendo WhatsApp Web...")
             self.driver.get("https://web.whatsapp.com")
 
-            # Esperar a que aparezca el indicador de que está cargado
-            self._update_status("Esperando a que WhatsApp Web esté listo...")
+            # Selectores actualizados para detectar carga
+            main_selectors = [
+                "//div[@contenteditable='true'][@data-tab='3']",
+                "//div[contains(@class, 'two')]//div[@contenteditable='true']",
+                "//div[@title='Nueva conversación']",
+                "//div[@role='textbox'][@title='Buscar o crear un chat nuevo']",
+                "//div[@data-testid='search']//div[@contenteditable='true']"
+            ]
 
-            # Esperar a que aparezca la barra de búsqueda o el código QR
-            wait = WebDriverWait(self.driver, 60)
+            self._update_status("Esperando carga de WhatsApp Web...")
 
-            # Intentar encontrar la barra de búsqueda (indica que está logueado)
-            try:
-                # Selector más robusto para la barra de búsqueda
-                search_selectors = [
-                    "//div[@contenteditable='true'][@data-tab='3']",
-                    "//div[@title='Buscar o comenzar un chat nuevo']",
-                    "//div[contains(@class, 'copyable-text')][@contenteditable='true']"
-                ]
+            # Intentar detectar interfaz principal
+            main_element = self._wait_for_element(main_selectors, timeout=30)
+            if main_element:
+                self._update_status("WhatsApp Web cargado correctamente")
+                return True
 
-                search_found = False
-                for selector in search_selectors:
-                    try:
-                        wait.until(EC.presence_of_element_located((By.XPATH, selector)))
-                        search_found = True
-                        break
-                    except TimeoutException:
-                        continue
+            # Si no encuentra la interfaz, buscar QR
+            qr_selectors = [
+                "//canvas[@aria-label='Scan me!']",
+                "//div[@data-ref]//canvas",
+                "//canvas",
+                "//div[contains(@class, 'qr-code')]//canvas"
+            ]
 
-                if search_found:
-                    self._update_status("WhatsApp Web está listo")
+            qr_element = self._wait_for_element(qr_selectors, timeout=10)
+            if qr_element:
+                self._update_status("Escanea el código QR en WhatsApp Web para continuar")
+
+                # Esperar a que se complete el login
+                main_element = self._wait_for_element(main_selectors, timeout=120)
+                if main_element:
+                    self._update_status("QR escaneado correctamente, WhatsApp Web listo")
                     return True
 
-            except TimeoutException:
-                pass
-
-            # Si no encuentra la barra de búsqueda, verificar si hay QR
-            try:
-                qr_selectors = [
-                    "//canvas[@aria-label='Scan me!']",
-                    "//canvas[contains(@aria-label, 'Scan')]",
-                    "//div[contains(@data-ref, 'qr')]//canvas"
-                ]
-
-                qr_found = False
-                for selector in qr_selectors:
-                    try:
-                        self.driver.find_element(By.XPATH, selector)
-                        qr_found = True
-                        break
-                    except NoSuchElementException:
-                        continue
-
-                if qr_found:
-                    self._update_status("Código QR detectado. Por favor, escanea el código QR en tu teléfono")
-
-                    # Esperar a que desaparezca el QR (timeout más largo)
-                    wait_long = WebDriverWait(self.driver, 120)
-
-                    for selector in qr_selectors:
-                        try:
-                            wait_long.until(EC.invisibility_of_element_located((By.XPATH, selector)))
-                            break
-                        except TimeoutException:
-                            continue
-
-                    # Esperar a que aparezca la barra de búsqueda
-                    for selector in search_selectors:
-                        try:
-                            wait_long.until(EC.presence_of_element_located((By.XPATH, selector)))
-                            self._update_status("WhatsApp Web está listo")
-                            return True
-                        except TimeoutException:
-                            continue
-
-                self._update_status("No se pudo detectar el estado de WhatsApp Web")
-                return False
-
-            except Exception as e:
-                self._update_status(f"Error verificando estado: {e}")
-                return False
-
-        except InvalidSessionIdException:
-            self._update_status("Sesión inválida, creando nueva...")
-            self.session_active = False
-            return self.setup_driver() and self.open_whatsapp()
-        except Exception as e:
-            self._update_status(f"Error al abrir WhatsApp Web: {e}")
+            self._update_status("No se pudo cargar WhatsApp Web correctamente")
             return False
 
-    def send_message_to_number(self, number: str, message: str) -> bool:
+        except Exception as e:
+            self._update_status(f"Error al abrir WhatsApp Web: {str(e)}")
+            return False
+
+    def _search_and_open_contact(self, phone_number: str) -> bool:
         """
-        Envía un mensaje a un número específico
+        Busca y abre un contacto específico
 
         Args:
-            number: Número de teléfono (solo dígitos)
-            message: Mensaje a enviar
+            phone_number: Número de teléfono del contacto
+
+        Returns:
+            True si se abrió el contacto correctamente
+        """
+        try:
+            if not self._check_session_alive():
+                self._update_status("Sesión perdida, reintentando...")
+                return False
+
+            # Selectores actualizados para búsqueda
+            search_selectors = [
+                "//div[@contenteditable='true'][@data-tab='3']",
+                "//div[@role='textbox'][@title='Buscar o crear un chat nuevo']",
+                "//div[@data-testid='search']//div[@contenteditable='true']",
+                "//div[contains(@class, 'two')]//div[@contenteditable='true']"
+            ]
+
+            search_box = self._wait_for_element(search_selectors, timeout=15, clickable=True)
+            if not search_box:
+                self._update_status("No se encontró el campo de búsqueda")
+                return False
+
+            # Limpiar y escribir el número
+            if not self._safe_click(search_box):
+                return False
+
+            search_box.clear()
+            time.sleep(1)
+            search_box.send_keys(phone_number)
+            time.sleep(3)
+            search_box.send_keys(Keys.ENTER)
+            time.sleep(4)
+
+            # Verificar si se abrió la conversación
+            message_selectors = [
+                "//div[@contenteditable='true'][@data-tab='10']",
+                "//div[@role='textbox'][@title='Escribe un mensaje']",
+                "//div[@data-testid='conversation-compose-box-input']",
+                "//div[contains(@class, 'copyable-text')][@data-tab='10']"
+            ]
+
+            message_box = self._wait_for_element(message_selectors, timeout=10)
+            if message_box:
+                return True
+
+            # Intentar con URL directa
+            self._update_status(f"Intentando abrir {phone_number} con URL directa...")
+            whatsapp_url = f"https://web.whatsapp.com/send?phone={phone_number}"
+            self.driver.get(whatsapp_url)
+            time.sleep(6)
+
+            message_box = self._wait_for_element(message_selectors, timeout=15)
+            return message_box is not None
+
+        except Exception as e:
+            self._update_status(f"Error al buscar contacto {phone_number}: {str(e)}")
+            return False
+
+    def _send_text_message(self, message_text: str) -> bool:
+        """
+        Envía un mensaje de texto
+
+        Args:
+            message_text: Texto del mensaje
 
         Returns:
             True si se envió correctamente
         """
         try:
-            # Verificar si el navegador sigue activo
-            if not self._is_browser_alive():
-                self._update_status("Error: El navegador se ha cerrado")
+            if not self._check_session_alive():
                 return False
 
-            # Crear URL directa al chat
-            url = f"https://web.whatsapp.com/send?phone={number}"
-            self._update_status(f"Enviando mensaje a {number}")
-
-            self.driver.get(url)
-            time.sleep(3)  # Esperar a que cargue
-
-            # Verificar nuevamente si el navegador sigue activo
-            if not self._is_browser_alive():
-                self._update_status("Error: El navegador se cerró durante el envío")
-                return False
-
-            # Esperar a que cargue el chat
-            wait = WebDriverWait(self.driver, 20)
-
-            # Selectores para el cuadro de texto
+            # Selectores actualizados para el campo de mensaje
             message_selectors = [
                 "//div[@contenteditable='true'][@data-tab='10']",
-                "//div[@contenteditable='true'][contains(@class, 'copyable-text')]",
-                "//div[@role='textbox'][@contenteditable='true']",
-                "//div[contains(@class, '_13NKt')][@contenteditable='true']"
+                "//div[@role='textbox'][@title='Escribe un mensaje']",
+                "//div[@data-testid='conversation-compose-box-input']",
+                "//div[contains(@class, 'copyable-text')][@data-tab='10']"
             ]
 
-            message_box = None
-            for selector in message_selectors:
-                try:
-                    message_box = wait.until(EC.presence_of_element_located((By.XPATH, selector)))
-                    break
-                except TimeoutException:
-                    continue
-
+            message_box = self._wait_for_element(message_selectors, timeout=15, clickable=True)
             if not message_box:
-                self._update_status(f"No se encontró el cuadro de mensaje para {number}")
+                self._update_status("No se encontró el campo de mensaje")
                 return False
 
-            # Escribir el mensaje
-            message_box.click()
-            time.sleep(1)
+            if not self._safe_click(message_box):
+                return False
 
-            # Limpiar y escribir el mensaje
             message_box.clear()
-            message_box.send_keys(message)
             time.sleep(1)
 
-            # Selectores para el botón de enviar
-            send_selectors = [
-                "//button[@data-tab='11']",
-                "//span[@data-icon='send']/../..",
-                "//button[contains(@class, '_4sWnG')]",
-                "//button[./span[@data-icon='send']]"
-            ]
+            # Enviar mensaje línea por línea
+            lines = message_text.split('\n')
+            for i, line in enumerate(lines):
+                message_box.send_keys(line)
+                if i < len(lines) - 1:
+                    message_box.send_keys(Keys.SHIFT + Keys.ENTER)
 
-            send_button = None
-            for selector in send_selectors:
-                try:
-                    send_button = wait.until(EC.element_to_be_clickable((By.XPATH, selector)))
-                    break
-                except TimeoutException:
-                    continue
-
-            if not send_button:
-                self._update_status(f"No se encontró el botón de enviar para {number}")
-                return False
-
-            send_button.click()
-
-            # Esperar un momento para confirmar el envío
+            time.sleep(1)
+            message_box.send_keys(Keys.ENTER)
             time.sleep(3)
 
-            # Verificar una vez más si el navegador sigue activo
-            if not self._is_browser_alive():
-                self._update_status("Advertencia: El navegador se cerró después del envío")
-                return False
-
-            self._update_status(f"✓ Mensaje enviado a {number}")
             return True
 
-        except TimeoutException:
-            self._update_status(f"Timeout al enviar mensaje a {number}")
-            return False
-        except (WebDriverException, InvalidSessionIdException):
-            self._update_status(f"Error: El navegador se cerró durante el envío a {number}")
-            self.browser_closed = True
-            self.session_active = False
-            return False
         except Exception as e:
-            self._update_status(f"Error al enviar mensaje a {number}: {e}")
+            self._update_status(f"Error al enviar mensaje de texto: {str(e)}")
             return False
 
-    def start_automation(self, numbers: List[str], messages: List[str],
-                         interval_min: int = 30, interval_max: int = 60):
+    def _validate_image_file(self, image_path: str) -> bool:
         """
-        Inicia la automatización de envío de mensajes
-        Envía UN mensaje a cada número de la lista
+        Valida que el archivo de imagen existe y es válido
 
         Args:
-            numbers: Lista de números de teléfono
-            messages: Lista de mensajes
-            interval_min: Intervalo mínimo entre mensajes (segundos)
-            interval_max: Intervalo máximo entre mensajes (segundos)
-        """
-        if not numbers or not messages:
-            self._update_status("Error: No hay números o mensajes configurados")
-            return
+            image_path: Ruta de la imagen
 
+        Returns:
+            True si la imagen es válida
+        """
+        try:
+            if not os.path.exists(image_path):
+                self._update_status(f"Archivo no encontrado: {image_path}")
+                return False
+
+            # Verificar tamaño del archivo (máximo 64MB)
+            file_size = os.path.getsize(image_path)
+            if file_size > 64 * 1024 * 1024:
+                self._update_status(f"Archivo demasiado grande: {file_size / (1024 * 1024):.1f}MB")
+                return False
+
+            # Verificar extensión
+            valid_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp']
+            ext = os.path.splitext(image_path)[1].lower()
+            if ext not in valid_extensions:
+                self._update_status(f"Formato de imagen no soportado: {ext}")
+                return False
+
+            return True
+
+        except Exception as e:
+            self._update_status(f"Error validando imagen: {str(e)}")
+            return False
+
+    def _send_image_only(self, image_path: str) -> bool:
+        """
+        Envía solo una imagen sin texto
+
+        Args:
+            image_path: Ruta de la imagen
+
+        Returns:
+            True si se envió correctamente
+        """
+        try:
+            self._update_status(f"🖼️ Enviando imagen: {os.path.basename(image_path)}")
+
+            # Selectores actualizados para el botón adjuntar
+            attach_selectors = [
+                "//div[@title='Adjuntar']",
+                "//button[@aria-label='Adjuntar']",
+                "//span[@data-icon='plus']/../..",
+                "//span[@data-icon='attach-menu-plus']/../..",
+                "//div[@role='button'][@aria-label='Adjuntar']"
+            ]
+
+            attach_button = self._wait_for_element(attach_selectors, timeout=10, clickable=True)
+            if not attach_button:
+                self._update_status("❌ No se encontró el botón adjuntar")
+                return False
+
+            if not self._safe_click(attach_button):
+                return False
+
+            time.sleep(2)
+
+            # Selectores para la opción de fotos
+            photos_selectors = [
+                "//input[@accept='image/*,video/mp4,video/3gpp,video/quicktime']",
+                "//input[@type='file'][contains(@accept, 'image')]",
+                "//input[@accept][@type='file']",
+                "//li[@data-testid='mi-attach-image']//input",
+                "//input[contains(@accept, 'image')]"
+            ]
+
+            # Buscar directamente el input de archivo
+            file_input = self._wait_for_element(photos_selectors, timeout=10)
+
+            if not file_input:
+                # Intentar hacer clic en la opción de fotos primero
+                photos_option_selectors = [
+                    "//span[contains(text(), 'Fotos y videos')]",
+                    "//div[contains(text(), 'Fotos y videos')]",
+                    "//li[@data-testid='mi-attach-image']",
+                    "//div[@role='button'][contains(., 'Foto')]"
+                ]
+
+                photos_option = self._wait_for_element(photos_option_selectors, timeout=8, clickable=True)
+                if photos_option:
+                    if self._safe_click(photos_option):
+                        time.sleep(2)
+                        file_input = self._wait_for_element(photos_selectors, timeout=10)
+
+            if not file_input:
+                self._update_status("❌ No se encontró el input de archivo")
+                return False
+
+            # Enviar archivo
+            absolute_path = os.path.abspath(image_path)
+            self._update_status(f"📎 Cargando imagen...")
+            file_input.send_keys(absolute_path)
+            time.sleep(6)  # Tiempo para cargar la imagen
+
+            # Enviar imagen directamente sin caption
+            send_selectors = [
+                "//span[@data-icon='send']/..",
+                "//button[@aria-label='Enviar']",
+                "//div[@role='button'][@aria-label='Enviar']",
+                "//span[@data-testid='send']/..",
+                "//button[contains(@class, 'send')]",
+                "//div[@data-testid='compose-btn-send']"
+            ]
+
+            send_button = self._wait_for_element(send_selectors, timeout=15, clickable=True)
+            if not send_button:
+                self._update_status("❌ No se encontró el botón de enviar")
+                return False
+
+            if not self._safe_click(send_button):
+                self._update_status("❌ No se pudo hacer click en enviar")
+                return False
+
+            time.sleep(5)  # Tiempo para que se envíe
+
+            self._update_status("✅ Imagen enviada correctamente")
+            return True
+
+        except Exception as e:
+            self._update_status(f"❌ Error al enviar imagen: {str(e)}")
+            return False
+
+    def _send_message(self, message_data: Dict[str, Any]) -> bool:
+        """
+        Envía un mensaje (texto y/o imagen) con estrategia mejorada
+
+        Args:
+            message_data: Datos del mensaje con 'texto' e 'imagen' opcional
+
+        Returns:
+            True si se envió correctamente
+        """
+        try:
+            if not self._check_session_alive():
+                self._update_status("Sesión perdida, no se puede enviar mensaje")
+                return False
+
+            # Compatibilidad con mensajes de texto simple
+            if isinstance(message_data, str):
+                return self._send_text_message(message_data)
+
+            text = message_data.get('texto', '').strip()
+            image_filename = message_data.get('imagen')
+
+            # Si hay imagen y texto, enviar por separado
+            if image_filename and text:
+                image_path = os.path.join("imagenes_mensajes", image_filename)
+
+                if not os.path.exists(image_path):
+                    self._update_status(f"⚠️ Imagen no encontrada: {image_path}")
+                    # Si no se encuentra la imagen, enviar solo el texto
+                    self._update_status("📝 Enviando solo el texto...")
+                    return self._send_text_message(text)
+
+                if not self._validate_image_file(image_path):
+                    # Si la imagen no es válida, enviar solo el texto
+                    self._update_status("📝 Imagen no válida, enviando solo el texto...")
+                    return self._send_text_message(text)
+
+                # Estrategia: Primero imagen, luego texto
+                self._update_status("📤 Enviando imagen y texto por separado...")
+
+                # 1. Enviar imagen
+                image_sent = self._send_image_only(image_path)
+                if not image_sent:
+                    self._update_status("⚠️ Error enviando imagen, intentando solo con texto...")
+                    return self._send_text_message(text)
+
+                # 2. Esperar un poco
+                time.sleep(2)
+
+                # 3. Enviar texto
+                text_sent = self._send_text_message(text)
+                if not text_sent:
+                    self._update_status("⚠️ Imagen enviada pero falló el texto")
+                    return True  # Al menos la imagen se envió
+
+                self._update_status("✅ Imagen y texto enviados correctamente")
+                return True
+
+            # Si solo hay imagen
+            elif image_filename:
+                image_path = os.path.join("imagenes_mensajes", image_filename)
+
+                if not os.path.exists(image_path):
+                    self._update_status(f"❌ Imagen no encontrada: {image_path}")
+                    return False
+
+                if not self._validate_image_file(image_path):
+                    self._update_status("❌ Imagen no válida")
+                    return False
+
+                return self._send_image_only(image_path)
+
+            # Si solo hay texto
+            elif text:
+                return self._send_text_message(text)
+
+            else:
+                self._update_status("❌ Mensaje vacío")
+                return False
+
+        except Exception as e:
+            self._update_status(f"❌ Error procesando mensaje: {str(e)}")
+            return False
+
+    def send_message_to_contact(self, phone_number: str, message_data: Dict[str, Any]) -> bool:
+        """
+        Envía un mensaje a un contacto específico
+
+        Args:
+            phone_number: Número de teléfono
+            message_data: Datos del mensaje
+
+        Returns:
+            True si se envió correctamente
+        """
+        try:
+            self._update_status(f"📱 Preparando envío a {phone_number}...")
+
+            if not self._check_session_alive():
+                self._update_status("❌ Sesión del navegador perdida")
+                return False
+
+            if not self._search_and_open_contact(phone_number):
+                self._update_status(f"❌ No se pudo abrir conversación con {phone_number}")
+                return False
+
+            if self._send_message(message_data):
+                self._update_status(f"✅ Mensaje enviado correctamente a {phone_number}")
+                return True
+            else:
+                self._update_status(f"❌ Error al enviar mensaje a {phone_number}")
+                return False
+
+        except Exception as e:
+            self._update_status(f"❌ Error general enviando a {phone_number}: {str(e)}")
+            return False
+
+    def start_automation(self, phone_numbers: List[str], messages: List[Dict[str, Any]],
+                         min_interval: int, max_interval: int):
+        """
+        Inicia la automatización del envío de mensajes
+
+        Args:
+            phone_numbers: Lista de números de teléfono
+            messages: Lista de mensajes con formato {'texto': str, 'imagen': str}
+            min_interval: Intervalo mínimo entre mensajes (segundos)
+            max_interval: Intervalo máximo entre mensajes (segundos)
+        """
         if self.is_running:
-            self._update_status("La automatización ya está en ejecución")
+            self._update_status("⚠️ La automatización ya está en ejecución")
             return
-
-        # Reiniciar control de envíos
-        self.sent_numbers.clear()
-        self.total_numbers = len(numbers)
-        self.messages_sent = 0
-        self.browser_closed = False
-
-        # Iniciar en un hilo separado
-        self.automation_thread = threading.Thread(
-            target=self._automation_loop,
-            args=(numbers, messages, interval_min, interval_max),
-            daemon=True
-        )
-        self.automation_thread.start()
-
-    def _automation_loop(self, numbers: List[str], messages: List[str],
-                         interval_min: int, interval_max: int):
-        """
-        Bucle principal de automatización
-        Envía un mensaje único a cada número
-
-        Args:
-            numbers: Lista de números
-            messages: Lista de mensajes
-            interval_min: Intervalo mínimo
-            interval_max: Intervalo máximo
-        """
-        self.is_running = True
-        self.should_stop = False
 
         try:
-            # Inicializar WhatsApp Web
-            if not self.open_whatsapp():
-                self._update_status("Error: No se pudo inicializar WhatsApp Web")
+            self.is_running = True
+            self.current_session_contacts = phone_numbers.copy()
+            self.current_session_messages = messages.copy()
+
+            self._update_status("🚀 Iniciando automatización...")
+
+            if not self._initialize_driver():
+                self.is_running = False
                 return
 
-            self._update_status(f"Automatización iniciada - Enviando a {self.total_numbers} números")
+            if not self._open_whatsapp_web():
+                self.close()
+                self.is_running = False
+                return
 
-            # Crear una copia de la lista para iterar
-            numbers_to_send = numbers.copy()
-            random.shuffle(numbers_to_send)  # Mezclar orden para mayor naturalidad
+            if not messages:
+                self._update_status("❌ No hay mensajes configurados")
+                self.close()
+                self.is_running = False
+                return
 
-            for number in numbers_to_send:
-                # Verificar si se debe detener
-                if self.should_stop:
-                    self._update_status("Automatización detenida por el usuario")
+            if not phone_numbers:
+                self._update_status("❌ No hay contactos configurados")
+                self.close()
+                self.is_running = False
+                return
+
+            self._update_status(f"📊 Iniciando envío a {len(phone_numbers)} contactos con {len(messages)} mensajes")
+
+            messages_sent = 0
+            messages_failed = 0
+
+            for i, phone_number in enumerate(phone_numbers):
+                if not self.is_running:
+                    self._update_status("⏹ Automatización detenida por el usuario")
                     break
 
-                # Verificar si el navegador sigue activo
-                if self.browser_closed or not self._is_browser_alive():
-                    self._update_status("Automatización detenida: El navegador se ha cerrado")
-                    break
-
-                # Verificar si ya se envió a este número
-                if number in self.sent_numbers:
-                    continue
-
-                # Seleccionar mensaje aleatorio
-                message = random.choice(messages)
-
-                # Enviar mensaje
-                if self.send_message_to_number(number, message):
-                    self.sent_numbers.add(number)
-                    self.messages_sent += 1
-
-                    progress = f"Progreso: {self.messages_sent}/{self.total_numbers}"
-                    self._update_status(progress)
-
-                    # Si ya se enviaron todos los mensajes, terminar
-                    if self.messages_sent >= self.total_numbers:
-                        self._update_status("✓ Todos los mensajes han sido enviados")
+                try:
+                    if not self._check_session_alive():
+                        self._update_status("❌ Sesión perdida, deteniendo automatización")
                         break
 
-                    # Calcular tiempo de espera aleatorio
-                    wait_time = random.randint(interval_min, interval_max)
-                    self._update_status(f"Esperando {wait_time} segundos hasta el próximo mensaje...")
+                    selected_message = random.choice(messages)
 
-                    # Esperar con posibilidad de interrumpir
-                    for second in range(wait_time):
-                        if self.should_stop or self.browser_closed or not self._is_browser_alive():
-                            break
-                        time.sleep(1)
+                    message_text = selected_message.get('texto', '')[:50] + "..." if len(
+                        selected_message.get('texto', '')) > 50 else selected_message.get('texto', '')
+                    has_image = selected_message.get('imagen') is not None
+                    message_info = f"'{message_text}'" + (" 📷" if has_image else "")
 
-                        # Mostrar countdown cada 10 segundos
-                        remaining = wait_time - second - 1
-                        if remaining > 0 and remaining % 10 == 0:
-                            self._update_status(f"Esperando... {remaining} segundos restantes")
+                    self._update_status(f"📱 ({i + 1}/{len(phone_numbers)}) Enviando a {phone_number}: {message_info}")
 
-                else:
-                    self._update_status(f"Error al enviar mensaje a {number}, continuando con el siguiente...")
+                    if self.send_message_to_contact(phone_number, selected_message):
+                        messages_sent += 1
+                    else:
+                        messages_failed += 1
 
-                    # Esperar menos tiempo en caso de error
-                    for _ in range(5):
-                        if self.should_stop or self.browser_closed:
-                            break
-                        time.sleep(1)
+                    if i < len(phone_numbers) - 1 and self.is_running:
+                        wait_time = random.randint(min_interval, max_interval)
+                        self._update_status(f"⏱ Esperando {wait_time} segundos antes del siguiente mensaje...")
+
+                        for _ in range(wait_time):
+                            if not self.is_running:
+                                break
+                            time.sleep(1)
+
+                except Exception as e:
+                    messages_failed += 1
+                    self._update_status(f"❌ Error con contacto {phone_number}: {str(e)}")
+                    continue
+
+            if self.is_running:
+                self._update_status(
+                    f"✅ Automatización completada: {messages_sent} enviados, {messages_failed} fallidos")
+            else:
+                self._update_status(f"⏹ Automatización detenida: {messages_sent} enviados, {messages_failed} fallidos")
 
         except Exception as e:
-            self._update_status(f"Error en la automatización: {e}")
-
+            self._update_status(f"❌ Error en automatización: {str(e)}")
         finally:
             self.is_running = False
-            completion_msg = f"Automatización finalizada - Mensajes enviados: {self.messages_sent}/{self.total_numbers}"
-            self._update_status(completion_msg)
+            self.close()
 
     def stop_automation(self):
         """
-        Detiene la automatización de forma robusta
+        Detiene la automatización en curso
         """
         if self.is_running:
-            self._update_status("Deteniendo automatización...")
-            self.should_stop = True
-
-            # Esperar a que termine el hilo con timeout
-            if self.automation_thread and self.automation_thread.is_alive():
-                # Dar tiempo para que termine naturalmente
-                self.automation_thread.join(timeout=10)
-
-                # Si sigue vivo después del timeout, forzar parada
-                if self.automation_thread.is_alive():
-                    self._update_status("Forzando detención de automatización...")
-                    self.is_running = False
+            self._update_status("🛑 Deteniendo automatización...")
+            self.is_running = False
         else:
-            self._update_status("La automatización no está en ejecución")
-
-    def reset_session(self):
-        """
-        Reinicia la sesión del navegador completamente
-        """
-        self._update_status("Reiniciando sesión del navegador...")
-        self.stop_automation()
-        self._force_close_driver()
-        time.sleep(2)
-        self.sent_numbers.clear()
-        self.messages_sent = 0
-        self.total_numbers = 0
-
-    def get_automation_stats(self) -> dict:
-        """
-        Obtiene estadísticas de la automatización actual
-
-        Returns:
-            Diccionario con estadísticas
-        """
-        return {
-            'total_numbers': self.total_numbers,
-            'messages_sent': self.messages_sent,
-            'remaining': self.total_numbers - self.messages_sent,
-            'is_running': self.is_running,
-            'browser_active': self._is_browser_alive(),
-            'session_active': self.session_active
-        }
-
-    def close(self):
-        """
-        Cierra el bot y limpia recursos de forma robusta
-        """
-        self._update_status("Cerrando bot...")
-
-        # Detener automatización si está activa
-        self.stop_automation()
-
-        # Cerrar navegador
-        self._force_close_driver()
-
-        # Limpiar perfil temporal
-        self.profile_manager.cleanup()
-
-        # Reiniciar estado
-        self.browser_closed = False
-        self.session_active = False
-        self.sent_numbers.clear()
-        self.total_numbers = 0
-        self.messages_sent = 0
+            self._update_status("ℹ️ No hay automatización en ejecución")
 
     def is_active(self) -> bool:
         """
-        Verifica si la automatización está activa
+        Verifica si el bot está activo
 
         Returns:
-            True si está activa
+            True si está ejecutándose
         """
-        return self.is_running and self._is_browser_alive()
+        return self.is_running
+
+    def close(self):
+        """
+        Cierra el navegador y limpia recursos
+        """
+        try:
+            if self.driver:
+                self._update_status("🔄 Cerrando navegador...")
+                self.driver.quit()
+                self.driver = None
+        except Exception as e:
+            self._update_status(f"⚠️ Error al cerrar navegador: {str(e)}")
+        finally:
+            self.is_running = False
+
+    def get_session_info(self) -> Dict[str, Any]:
+        """
+        Obtiene información de la sesión actual
+
+        Returns:
+            Diccionario con información de la sesión
+        """
+        return {
+            'is_running': self.is_running,
+            'contacts_count': len(self.current_session_contacts),
+            'messages_count': len(self.current_session_messages),
+            'driver_active': self.driver is not None
+        }

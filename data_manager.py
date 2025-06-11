@@ -1,20 +1,21 @@
 # data_manager.py
 """
 Gestor de datos para el Bot de WhatsApp
-Maneja la persistencia y gestión de contactos (nombre y número) y mensajes
-utilizando archivos JSON para almacenar la información localmente.
-Incluye compatibilidad con el formato anterior de solo números.
+Maneja la persistencia y gestión de contactos (nombre y número) y mensajes con soporte
+para texto e imágenes utilizando archivos JSON para almacenar la información localmente.
+Incluye compatibilidad con formatos anteriores y migración automática de datos.
 """
 
 import json
 import os
+import shutil
 from typing import List, Dict, Any, Tuple, Optional
 
 
 class DataManager:
     """
     Clase para gestionar la persistencia de datos del bot
-    Maneja contactos con nombre y número, y mensajes
+    Maneja contactos con nombre y número, y mensajes con texto e imágenes opcionales
     """
 
     def __init__(self):
@@ -24,9 +25,11 @@ class DataManager:
         self.numbers_file = "numeros.json"
         self.messages_file = "mensajes.json"
         self.config_file = "config.json"
+        self.images_folder = "imagenes_mensajes"
 
-        # Crear archivos si no existen
+        # Crear archivos y carpetas si no existen
         self._initialize_files()
+        self._create_images_folder()
 
     def _initialize_files(self):
         """
@@ -42,6 +45,9 @@ class DataManager:
         # Archivo de mensajes
         if not os.path.exists(self.messages_file):
             self._save_json(self.messages_file, {"mensajes": []})
+        else:
+            # Migrar formato de mensajes si es necesario
+            self._migrate_messages_format()
 
         # Archivo de configuración
         if not os.path.exists(self.config_file):
@@ -51,6 +57,13 @@ class DataManager:
                 "activo": False
             }
             self._save_json(self.config_file, default_config)
+
+    def _create_images_folder(self):
+        """
+        Crea la carpeta para almacenar imágenes de mensajes
+        """
+        if not os.path.exists(self.images_folder):
+            os.makedirs(self.images_folder)
 
     def _migrate_old_format(self):
         """
@@ -77,9 +90,38 @@ class DataManager:
                 self._save_json(self.numbers_file, new_data)
 
         except Exception as e:
-            print(f"Error en migración: {e}")
+            print(f"Error en migración de contactos: {e}")
             # En caso de error, crear estructura nueva
             self._save_json(self.numbers_file, {"contactos": []})
+
+    def _migrate_messages_format(self):
+        """
+        Migra el formato antiguo de mensajes (solo texto) al nuevo formato (texto + imagen opcional)
+        """
+        try:
+            data = self._load_json(self.messages_file)
+            messages = data.get("mensajes", [])
+            migrated = False
+
+            # Verificar si hay mensajes en formato antiguo (solo strings)
+            for i, message in enumerate(messages):
+                if isinstance(message, str):
+                    # Convertir a nuevo formato
+                    messages[i] = {
+                        "texto": message,
+                        "imagen": None
+                    }
+                    migrated = True
+
+            # Guardar si se hizo alguna migración
+            if migrated:
+                self._save_json(self.messages_file, {"mensajes": messages})
+                print("Mensajes migrados al nuevo formato con soporte para imágenes")
+
+        except Exception as e:
+            print(f"Error en migración de mensajes: {e}")
+            # En caso de error, crear estructura nueva
+            self._save_json(self.messages_file, {"mensajes": []})
 
     def _load_json(self, filename: str) -> Dict[str, Any]:
         """
@@ -111,7 +153,67 @@ class DataManager:
         except Exception as e:
             print(f"Error al guardar {filename}: {e}")
 
-    # Gestión de contactos (nombre + número)
+    def _copy_image_to_folder(self, image_path: str) -> Optional[str]:
+        """
+        Copia una imagen a la carpeta de imágenes del bot
+
+        Args:
+            image_path: Ruta de la imagen original
+
+        Returns:
+            Nombre del archivo copiado o None si hay error
+        """
+        try:
+            if not os.path.exists(image_path):
+                return None
+
+            # Generar nombre único para la imagen
+            import time
+            timestamp = str(int(time.time()))
+            file_extension = os.path.splitext(image_path)[1].lower()
+            new_filename = f"img_{timestamp}{file_extension}"
+            destination = os.path.join(self.images_folder, new_filename)
+
+            # Copiar archivo
+            shutil.copy2(image_path, destination)
+            return new_filename
+
+        except Exception as e:
+            print(f"Error al copiar imagen: {e}")
+            return None
+
+    def _delete_message_image(self, image_filename: str):
+        """
+        Elimina una imagen de mensaje de la carpeta
+
+        Args:
+            image_filename: Nombre del archivo de imagen
+        """
+        if image_filename:
+            try:
+                image_path = os.path.join(self.images_folder, image_filename)
+                if os.path.exists(image_path):
+                    os.remove(image_path)
+            except Exception as e:
+                print(f"Error al eliminar imagen {image_filename}: {e}")
+
+    def get_image_path(self, image_filename: str) -> Optional[str]:
+        """
+        Obtiene la ruta completa de una imagen
+
+        Args:
+            image_filename: Nombre del archivo de imagen
+
+        Returns:
+            Ruta completa de la imagen o None si no existe
+        """
+        if not image_filename:
+            return None
+
+        image_path = os.path.join(self.images_folder, image_filename)
+        return image_path if os.path.exists(image_path) else None
+
+    # Gestión de contactos (sin cambios)
     def get_contacts(self) -> List[Dict[str, str]]:
         """
         Obtiene la lista de contactos guardados
@@ -302,7 +404,7 @@ class DataManager:
             return contacts[index].copy()
         return None
 
-    # Métodos de compatibilidad (mantener para no romper código existente)
+    # Métodos de compatibilidad para contactos
     def get_numbers(self) -> List[str]:
         """
         Método de compatibilidad: obtiene solo los números
@@ -350,33 +452,75 @@ class DataManager:
                 return self.remove_contact(i)
         return False
 
-    # Gestión de mensajes (sin cambios)
-    def get_messages(self) -> List[str]:
+    # Gestión de mensajes (actualizada para soporte de imágenes)
+    def get_messages(self) -> List[Dict[str, Any]]:
         """
-        Obtiene la lista de mensajes guardados
+        Obtiene la lista de mensajes guardados con formato nuevo
 
         Returns:
-            Lista de mensajes
+            Lista de diccionarios con 'texto' e 'imagen' (opcional)
         """
         data = self._load_json(self.messages_file)
-        return data.get("mensajes", [])
+        messages = data.get("mensajes", [])
 
-    def add_message(self, message: str) -> bool:
+        # Asegurar que todos los mensajes tengan el formato correcto
+        formatted_messages = []
+        for message in messages:
+            if isinstance(message, str):
+                # Formato antiguo - convertir
+                formatted_messages.append({
+                    "texto": message,
+                    "imagen": None
+                })
+            elif isinstance(message, dict) and "texto" in message:
+                # Formato nuevo - validar
+                formatted_messages.append({
+                    "texto": message.get("texto", ""),
+                    "imagen": message.get("imagen", None)
+                })
+
+        return formatted_messages
+
+    def get_messages_legacy(self) -> List[str]:
         """
-        Agrega un mensaje a la lista
+        Método de compatibilidad: obtiene solo los textos de los mensajes
+
+        Returns:
+            Lista de strings con los textos de los mensajes
+        """
+        messages = self.get_messages()
+        return [msg.get("texto", "") for msg in messages]
+
+    def add_message(self, text: str, image_path: str = None) -> bool:
+        """
+        Agrega un mensaje con texto e imagen opcional
 
         Args:
-            message: Mensaje a agregar
+            text: Texto del mensaje
+            image_path: Ruta de la imagen (opcional)
 
         Returns:
             True si se agregó correctamente
         """
-        if message.strip():
-            messages = self.get_messages()
-            messages.append(message.strip())
-            self._save_json(self.messages_file, {"mensajes": messages})
-            return True
-        return False
+        if not text.strip():
+            return False
+
+        # Procesar imagen si se proporciona
+        image_filename = None
+        if image_path and os.path.exists(image_path):
+            image_filename = self._copy_image_to_folder(image_path)
+
+        # Crear mensaje
+        new_message = {
+            "texto": text.strip(),
+            "imagen": image_filename
+        }
+
+        # Agregar a la lista
+        messages = self.get_messages()
+        messages.append(new_message)
+        self._save_json(self.messages_file, {"mensajes": messages})
+        return True
 
     def remove_message(self, index: int) -> bool:
         """
@@ -391,30 +535,77 @@ class DataManager:
         messages = self.get_messages()
 
         if 0 <= index < len(messages):
+            message = messages[index]
+
+            # Eliminar imagen asociada si existe
+            if message.get("imagen"):
+                self._delete_message_image(message["imagen"])
+
+            # Eliminar mensaje
             messages.pop(index)
             self._save_json(self.messages_file, {"mensajes": messages})
             return True
         return False
 
-    def update_message(self, index: int, new_message: str) -> bool:
+    def update_message(self, index: int, new_text: str, new_image_path: str = None) -> bool:
         """
         Actualiza un mensaje existente
 
         Args:
             index: Índice del mensaje a actualizar
-            new_message: Nuevo contenido del mensaje
+            new_text: Nuevo texto del mensaje
+            new_image_path: Nueva ruta de imagen (opcional, None para mantener actual, "" para eliminar)
 
         Returns:
             True si se actualizó correctamente
         """
-        if new_message.strip():
-            messages = self.get_messages()
+        if not new_text.strip():
+            return False
 
-            if 0 <= index < len(messages):
-                messages[index] = new_message.strip()
-                self._save_json(self.messages_file, {"mensajes": messages})
-                return True
-        return False
+        messages = self.get_messages()
+
+        if not (0 <= index < len(messages)):
+            return False
+
+        current_message = messages[index]
+
+        # Manejar imagen
+        new_image_filename = current_message.get("imagen")
+
+        if new_image_path is not None:  # Se especificó cambio de imagen
+            # Eliminar imagen anterior si existe
+            if current_message.get("imagen"):
+                self._delete_message_image(current_message["imagen"])
+
+            # Procesar nueva imagen
+            if new_image_path and os.path.exists(new_image_path):
+                new_image_filename = self._copy_image_to_folder(new_image_path)
+            else:
+                new_image_filename = None
+
+        # Actualizar mensaje
+        messages[index] = {
+            "texto": new_text.strip(),
+            "imagen": new_image_filename
+        }
+
+        self._save_json(self.messages_file, {"mensajes": messages})
+        return True
+
+    def get_message_by_index(self, index: int) -> Optional[Dict[str, Any]]:
+        """
+        Obtiene un mensaje por su índice
+
+        Args:
+            index: Índice del mensaje
+
+        Returns:
+            Diccionario con 'texto' e 'imagen' o None si no existe
+        """
+        messages = self.get_messages()
+        if 0 <= index < len(messages):
+            return messages[index].copy()
+        return None
 
     # Gestión de configuración (sin cambios)
     def get_config(self) -> Dict[str, Any]:
