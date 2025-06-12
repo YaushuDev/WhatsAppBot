@@ -8,6 +8,8 @@ optimizado para pantallas de cualquier tamaño y resolución.
 
 import tkinter as tk
 from tkinter import ttk
+import os
+import sys
 
 
 class StyleManager:
@@ -377,6 +379,24 @@ class StyleManager:
 
         return tk.LabelFrame(parent, **labelframe_config)
 
+    def get_resource_path(self, relative_path):
+        """
+        Obtiene la ruta absoluta a un recurso, funciona tanto en desarrollo como con PyInstaller
+
+        Args:
+            relative_path: Ruta relativa del recurso
+
+        Returns:
+            Ruta absoluta al recurso
+        """
+        try:
+            # PyInstaller crea una carpeta temporal y almacena el path en _MEIPASS
+            base_path = sys._MEIPASS
+        except Exception:
+            base_path = os.path.abspath(".")
+
+        return os.path.join(base_path, relative_path)
+
     def configure_window(self, window, title="Bot de WhatsApp", size="1000x600", icon_path="icon.ico"):
         """
         Configura una ventana con el estilo del tema optimizado para layout horizontal
@@ -392,11 +412,17 @@ class StyleManager:
         window.resizable(False, False)
         window.configure(bg=self.colors["bg_primary"])
 
-        # Intentar cargar el icono
+        # Cargar el icono con manejo mejorado
         try:
-            window.iconbitmap(icon_path)
-        except:
-            pass  # Si no existe el icono, continúa sin él
+            # Obtener ruta absoluta del icono
+            icon_absolute_path = self.get_resource_path(icon_path)
+
+            if os.path.exists(icon_absolute_path):
+                window.iconbitmap(icon_absolute_path)
+            else:
+                print(f"Advertencia: No se encontró el archivo de icono en {icon_absolute_path}")
+        except Exception as e:
+            print(f"Advertencia: No se pudo cargar el icono: {e}")
 
         # Centrar ventana en pantalla
         window.update_idletasks()

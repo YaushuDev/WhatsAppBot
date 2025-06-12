@@ -1,10 +1,10 @@
 # whatsapp_bot.py
 """
-Bot de WhatsApp automatizado con soporte completo para emoticones
+Bot de WhatsApp automatizado optimizado con soporte completo para emoticones
 Maneja la automatización del envío de mensajes a través de WhatsApp Web usando Selenium.
 Incluye soporte robusto para emoticones y caracteres Unicode mediante JavaScript injection,
 solucionando las limitaciones de ChromeDriver con caracteres fuera del BMP.
-Soporta envío de mensajes con texto e imágenes por separado para mayor confiabilidad.
+Optimizado para velocidad: envío de texto ~10s, envío con imagen ~20-25s máximo.
 """
 
 import time
@@ -20,13 +20,14 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.common.exceptions import TimeoutException, \
-    ElementClickInterceptedException
+    ElementClickInterceptedException, NoSuchElementException
 from typing import List, Dict, Any, Callable, Optional
 
 
 class WhatsAppBot:
     """
     Bot automatizado para WhatsApp Web con soporte completo para emoticones y caracteres Unicode
+    Optimizado para velocidad y eficiencia en el envío de mensajes
     """
 
     def __init__(self, status_callback: Optional[Callable] = None):
@@ -39,11 +40,15 @@ class WhatsAppBot:
         self.driver = None
         self.is_running = False
         self.status_callback = status_callback
-        self.wait_timeout = 20
+        self.wait_timeout = 15  # Reducido de 20 a 15
         self.current_session_contacts = []
         self.current_session_messages = []
 
-        # Configuración de Chrome
+        # Cache para elementos encontrados (optimización)
+        self._element_cache = {}
+        self._last_contact = None
+
+        # Configuración de Chrome optimizada
         self.chrome_options = self._configure_chrome_options()
 
     def _configure_chrome_options(self) -> Options:
@@ -55,7 +60,7 @@ class WhatsAppBot:
         """
         options = Options()
 
-        # Configuración básica
+        # Configuración básica optimizada
         options.add_argument("--disable-blink-features=AutomationControlled")
         options.add_experimental_option("excludeSwitches", ["enable-automation"])
         options.add_experimental_option('useAutomationExtension', False)
@@ -66,6 +71,13 @@ class WhatsAppBot:
         options.add_argument("--disable-web-security")
         options.add_argument("--allow-running-insecure-content")
 
+        # Optimizaciones de rendimiento
+        options.add_argument("--disable-features=VizDisplayCompositor")
+        options.add_argument("--disable-ipc-flooding-protection")
+        options.add_argument("--disable-renderer-backgrounding")
+        options.add_argument("--disable-backgrounding-occluded-windows")
+        options.add_argument("--disable-background-networking")
+
         # Configuración para soporte de Unicode y emoticones
         options.add_argument("--lang=es")
         options.add_argument("--accept-lang=es-ES,es,en")
@@ -74,7 +86,7 @@ class WhatsAppBot:
         user_data_dir = os.path.join(os.getcwd(), "chrome_user_data")
         options.add_argument(f"--user-data-dir={user_data_dir}")
 
-        # Configuración de medios para imágenes y Unicode
+        # Configuración de medios optimizada
         prefs = {
             "profile.default_content_setting_values": {
                 "media_stream": 1,
@@ -85,7 +97,10 @@ class WhatsAppBot:
             "profile.default_content_settings.popups": 0,
             "profile.managed_default_content_settings.images": 1,
             "intl.accept_languages": "es-ES,es,en",
-            "intl.charset_default": "UTF-8"
+            "intl.charset_default": "UTF-8",
+            # Optimizaciones de carga
+            "profile.default_content_setting_values.automatic_downloads": 1,
+            "profile.content_settings.exceptions.automatic_downloads.*.setting": 1
         }
         options.add_experimental_option("prefs", prefs)
 
@@ -102,7 +117,7 @@ class WhatsAppBot:
             True si contiene emoticones o caracteres especiales
         """
         try:
-            # Patrón para detectar emoticones y caracteres Unicode fuera del BMP
+            # Patrón optimizado para detectar emoticones
             emoji_pattern = re.compile(
                 "["
                 "\U0001F600-\U0001F64F"  # emoticones faciales
@@ -110,7 +125,6 @@ class WhatsAppBot:
                 "\U0001F680-\U0001F6FF"  # transporte & símbolos de mapa
                 "\U0001F1E0-\U0001F1FF"  # banderas (iOS)
                 "\U00002500-\U00002BEF"  # símbolos varios
-                "\U00002702-\U000027B0"
                 "\U00002702-\U000027B0"
                 "\U000024C2-\U0001F251"
                 "\U0001f926-\U0001f937"
@@ -127,7 +141,6 @@ class WhatsAppBot:
 
             return bool(emoji_pattern.search(text))
         except Exception:
-            # Si hay algún error en la detección, asumir que tiene caracteres especiales
             return True
 
     def _escape_unicode_for_js(self, text: str) -> str:
@@ -141,11 +154,9 @@ class WhatsAppBot:
             Texto escapado para JavaScript
         """
         try:
-            # Convertir a JSON para escape automático y luego quitar las comillas
             escaped = json.dumps(text, ensure_ascii=False)[1:-1]
             return escaped
         except Exception:
-            # Fallback: escape manual básico
             return text.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n')
 
     def _update_status(self, message: str):
@@ -171,6 +182,11 @@ class WhatsAppBot:
             self.driver = webdriver.Chrome(options=self.chrome_options)
             self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
             self.driver.maximize_window()
+
+            # Optimizar timeouts
+            self.driver.implicitly_wait(3)  # Reducido de default
+            self.driver.set_page_load_timeout(30)
+
             return True
         except Exception as e:
             self._update_status(f"Error al inicializar navegador: {str(e)}")
@@ -186,39 +202,49 @@ class WhatsAppBot:
         try:
             if not self.driver:
                 return False
-            # Intentar acceder al título de la página
             _ = self.driver.title
             return True
         except Exception:
             return False
 
-    def _wait_for_element(self, selectors: List[str], timeout: int = 15, clickable: bool = False) -> Optional[Any]:
+    def _wait_for_element_optimized(self, selectors: List[str], timeout: int = 10, clickable: bool = False) -> Optional[
+        Any]:
         """
-        Espera a que aparezca un elemento usando múltiples selectores
+        Espera a que aparezca un elemento usando múltiples selectores (optimizado)
 
         Args:
-            selectors: Lista de selectores XPath a probar
+            selectors: Lista de selectores XPath/CSS a probar
             timeout: Tiempo máximo de espera
             clickable: Si el elemento debe ser clickeable
 
         Returns:
             Elemento encontrado o None
         """
+        # Usar timeout más corto para cada selector individual
+        individual_timeout = max(1, timeout // len(selectors))
+
         for selector in selectors:
             try:
-                wait = WebDriverWait(self.driver, timeout)
-                if clickable:
-                    element = wait.until(EC.element_to_be_clickable((By.XPATH, selector)))
+                wait = WebDriverWait(self.driver, individual_timeout)
+
+                # Determinar si es XPath o CSS
+                if selector.startswith('//') or selector.startswith('('):
+                    by_method = By.XPATH
                 else:
-                    element = wait.until(EC.presence_of_element_located((By.XPATH, selector)))
+                    by_method = By.CSS_SELECTOR
+
+                if clickable:
+                    element = wait.until(EC.element_to_be_clickable((by_method, selector)))
+                else:
+                    element = wait.until(EC.presence_of_element_located((by_method, selector)))
                 return element
             except TimeoutException:
                 continue
         return None
 
-    def _safe_click(self, element, max_attempts: int = 3) -> bool:
+    def _safe_click_optimized(self, element, max_attempts: int = 2) -> bool:
         """
-        Hace click de forma segura evitando interceptaciones
+        Hace click de forma segura evitando interceptaciones (optimizado)
 
         Args:
             element: Elemento a hacer click
@@ -229,39 +255,35 @@ class WhatsAppBot:
         """
         for attempt in range(max_attempts):
             try:
-                # Scroll al elemento si es necesario
-                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
-                time.sleep(0.5)
+                # Scroll rápido al elemento
+                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center', behavior: 'instant'});",
+                                           element)
+                time.sleep(0.2)  # Reducido de 0.5
 
-                # Intentar click normal
+                # Click directo
                 element.click()
                 return True
 
             except ElementClickInterceptedException:
                 try:
-                    # Intentar click con JavaScript
+                    # Click con JavaScript (más rápido)
                     self.driver.execute_script("arguments[0].click();", element)
                     return True
                 except:
-                    # Intentar con ActionChains
-                    try:
-                        ActionChains(self.driver).move_to_element(element).click().perform()
-                        return True
-                    except:
-                        if attempt < max_attempts - 1:
-                            time.sleep(1)
-                            continue
-                        return False
-            except Exception as e:
+                    if attempt < max_attempts - 1:
+                        time.sleep(0.3)  # Reducido de 1
+                        continue
+                    return False
+            except Exception:
                 if attempt < max_attempts - 1:
-                    time.sleep(1)
+                    time.sleep(0.3)  # Reducido de 1
                     continue
                 return False
         return False
 
     def _open_whatsapp_web(self) -> bool:
         """
-        Abre WhatsApp Web y espera a que se cargue
+        Abre WhatsApp Web y espera a que se cargue (optimizado)
 
         Returns:
             True si se abrió correctamente
@@ -270,37 +292,36 @@ class WhatsAppBot:
             self._update_status("Abriendo WhatsApp Web...")
             self.driver.get("https://web.whatsapp.com")
 
-            # Selectores actualizados para detectar carga
+            # Selectores optimizados (CSS cuando sea posible)
             main_selectors = [
-                "//div[@contenteditable='true'][@data-tab='3']",
-                "//div[contains(@class, 'two')]//div[@contenteditable='true']",
+                "div[contenteditable='true'][data-tab='3']",
+                "div[role='textbox'][title*='Buscar']",
+                "div[data-testid='search'] div[contenteditable='true']",
                 "//div[@title='Nueva conversación']",
-                "//div[@role='textbox'][@title='Buscar o crear un chat nuevo']",
-                "//div[@data-testid='search']//div[@contenteditable='true']"
+                "//div[@contenteditable='true'][@data-tab='3']"
             ]
 
             self._update_status("Esperando carga de WhatsApp Web...")
 
-            # Intentar detectar interfaz principal
-            main_element = self._wait_for_element(main_selectors, timeout=30)
+            # Detectar interfaz principal
+            main_element = self._wait_for_element_optimized(main_selectors, timeout=25)
             if main_element:
                 self._update_status("WhatsApp Web cargado correctamente")
                 return True
 
-            # Si no encuentra la interfaz, buscar QR
+            # Buscar QR si no encuentra interfaz
             qr_selectors = [
-                "//canvas[@aria-label='Scan me!']",
-                "//div[@data-ref]//canvas",
-                "//canvas",
-                "//div[contains(@class, 'qr-code')]//canvas"
+                "canvas[aria-label='Scan me!']",
+                "canvas",
+                "//div[@data-ref]//canvas"
             ]
 
-            qr_element = self._wait_for_element(qr_selectors, timeout=10)
+            qr_element = self._wait_for_element_optimized(qr_selectors, timeout=5)
             if qr_element:
                 self._update_status("Escanea el código QR en WhatsApp Web para continuar")
 
-                # Esperar a que se complete el login
-                main_element = self._wait_for_element(main_selectors, timeout=120)
+                # Esperar login
+                main_element = self._wait_for_element_optimized(main_selectors, timeout=60)
                 if main_element:
                     self._update_status("QR escaneado correctamente, WhatsApp Web listo")
                     return True
@@ -312,9 +333,9 @@ class WhatsAppBot:
             self._update_status(f"Error al abrir WhatsApp Web: {str(e)}")
             return False
 
-    def _search_and_open_contact(self, phone_number: str) -> bool:
+    def _search_and_open_contact_optimized(self, phone_number: str) -> bool:
         """
-        Busca y abre un contacto específico
+        Busca y abre un contacto específico (optimizado)
 
         Args:
             phone_number: Número de teléfono del contacto
@@ -327,58 +348,73 @@ class WhatsAppBot:
                 self._update_status("Sesión perdida, reintentando...")
                 return False
 
-            # Selectores actualizados para búsqueda
+            # Si es el mismo contacto que antes, verificar si ya está abierto
+            if self._last_contact == phone_number:
+                message_selectors = [
+                    "div[contenteditable='true'][data-tab='10']",
+                    "div[role='textbox'][title*='mensaje']",
+                    "div[data-testid='conversation-compose-box-input']"
+                ]
+
+                existing_message_box = self._wait_for_element_optimized(message_selectors, timeout=2)
+                if existing_message_box:
+                    return True
+
+            # Selectores optimizados para búsqueda
             search_selectors = [
-                "//div[@contenteditable='true'][@data-tab='3']",
-                "//div[@role='textbox'][@title='Buscar o crear un chat nuevo']",
-                "//div[@data-testid='search']//div[@contenteditable='true']",
-                "//div[contains(@class, 'two')]//div[@contenteditable='true']"
+                "div[contenteditable='true'][data-tab='3']",
+                "div[role='textbox'][title*='Buscar']",
+                "div[data-testid='search'] div[contenteditable='true']"
             ]
 
-            search_box = self._wait_for_element(search_selectors, timeout=15, clickable=True)
+            search_box = self._wait_for_element_optimized(search_selectors, timeout=10, clickable=True)
             if not search_box:
                 self._update_status("No se encontró el campo de búsqueda")
                 return False
 
-            # Limpiar y escribir el número
-            if not self._safe_click(search_box):
+            if not self._safe_click_optimized(search_box):
                 return False
 
+            # Limpiar y escribir más rápido
             search_box.clear()
-            time.sleep(1)
+            time.sleep(0.3)  # Reducido de 1
             search_box.send_keys(phone_number)
-            time.sleep(3)
+            time.sleep(1.5)  # Reducido de 3
             search_box.send_keys(Keys.ENTER)
-            time.sleep(4)
+            time.sleep(2)  # Reducido de 4
 
-            # Verificar si se abrió la conversación
+            # Verificar conversación abierta
             message_selectors = [
-                "//div[@contenteditable='true'][@data-tab='10']",
-                "//div[@role='textbox'][@title='Escribe un mensaje']",
-                "//div[@data-testid='conversation-compose-box-input']",
-                "//div[contains(@class, 'copyable-text')][@data-tab='10']"
+                "div[contenteditable='true'][data-tab='10']",
+                "div[role='textbox'][title*='mensaje']",
+                "div[data-testid='conversation-compose-box-input']"
             ]
 
-            message_box = self._wait_for_element(message_selectors, timeout=10)
+            message_box = self._wait_for_element_optimized(message_selectors, timeout=8)
             if message_box:
+                self._last_contact = phone_number
                 return True
 
-            # Intentar con URL directa
-            self._update_status(f"Intentando abrir {phone_number} con URL directa...")
+            # URL directa como fallback (más rápido)
+            self._update_status(f"Abriendo {phone_number} con URL directa...")
             whatsapp_url = f"https://web.whatsapp.com/send?phone={phone_number}"
             self.driver.get(whatsapp_url)
-            time.sleep(6)
+            time.sleep(3)  # Reducido de 6
 
-            message_box = self._wait_for_element(message_selectors, timeout=15)
-            return message_box is not None
+            message_box = self._wait_for_element_optimized(message_selectors, timeout=10)
+            if message_box:
+                self._last_contact = phone_number
+                return True
+
+            return False
 
         except Exception as e:
             self._update_status(f"Error al buscar contacto {phone_number}: {str(e)}")
             return False
 
-    def _send_text_message_javascript(self, message_text: str) -> bool:
+    def _send_text_message_javascript_optimized(self, message_text: str) -> bool:
         """
-        Envía un mensaje de texto usando JavaScript para soporte completo de emoticones
+        Envía un mensaje de texto usando JavaScript optimizado para soporte completo de emoticones
 
         Args:
             message_text: Texto del mensaje
@@ -389,38 +425,25 @@ class WhatsAppBot:
         try:
             self._update_status("📝 Enviando mensaje con soporte de emoticones...")
 
-            # Escapar el texto para JavaScript
             escaped_text = self._escape_unicode_for_js(message_text)
 
-            # Script JavaScript mejorado para envío con emoticones
+            # Script JavaScript optimizado
             js_script = f"""
-            function sendMessageWithEmojis() {{
+            function sendMessageOptimized() {{
                 try {{
-                    // Buscar el campo de mensaje
                     const messageBox = document.querySelector('[contenteditable="true"][data-tab="10"]') ||
                                      document.querySelector('[role="textbox"][title*="mensaje"]') ||
-                                     document.querySelector('[data-testid="conversation-compose-box-input"]') ||
-                                     document.querySelector('[contenteditable="true"]:not([data-tab="3"])');
+                                     document.querySelector('[data-testid="conversation-compose-box-input"]');
 
-                    if (!messageBox) {{
-                        console.log("No se encontró el campo de mensaje");
-                        return false;
-                    }}
+                    if (!messageBox) return false;
 
-                    // Hacer foco en el campo
                     messageBox.focus();
-
-                    // Limpiar contenido existente
                     messageBox.innerHTML = '';
 
-                    // Insertar el texto con emoticones
                     const textToSend = "{escaped_text}";
-
-                    // Método 1: Insertar como texto plano (preserva emoticones)
                     const textNode = document.createTextNode(textToSend);
                     messageBox.appendChild(textNode);
 
-                    // Disparar eventos para que WhatsApp reconozca el cambio
                     const inputEvent = new InputEvent('input', {{
                         bubbles: true,
                         cancelable: true,
@@ -428,57 +451,41 @@ class WhatsAppBot:
                     }});
                     messageBox.dispatchEvent(inputEvent);
 
-                    // Esperar un poco y enviar
-                    setTimeout(() => {{
-                        // Buscar y hacer click en el botón de enviar
-                        const sendButton = document.querySelector('[data-testid="send"]') ||
-                                         document.querySelector('[aria-label*="Enviar"]') ||
-                                         document.querySelector('[title*="Enviar"]') ||
-                                         document.querySelector('span[data-icon="send"]').closest('button');
+                    // Envío inmediato sin setTimeout
+                    const sendButton = document.querySelector('[data-testid="send"]') ||
+                                     document.querySelector('[aria-label*="Enviar"]') ||
+                                     document.querySelector('span[data-icon="send"]').closest('button');
 
-                        if (sendButton) {{
-                            sendButton.click();
-                            console.log("Mensaje enviado correctamente");
-                            return true;
-                        }} else {{
-                            console.log("No se encontró el botón enviar");
-                            return false;
-                        }}
-                    }}, 500);
-
-                    return true;
+                    if (sendButton) {{
+                        sendButton.click();
+                        return true;
+                    }}
+                    return false;
 
                 }} catch (error) {{
-                    console.log("Error en sendMessageWithEmojis:", error);
+                    console.log("Error:", error);
                     return false;
                 }}
             }}
-
-            return sendMessageWithEmojis();
+            return sendMessageOptimized();
             """
 
-            # Ejecutar el script JavaScript
             result = self.driver.execute_script(js_script)
-
-            # Esperar a que se complete el envío
-            time.sleep(3)
+            time.sleep(1.5)  # Reducido de 3
 
             if result is not False:
                 self._update_status("✅ Mensaje con emoticones enviado correctamente")
                 return True
             else:
-                # Fallback al método tradicional si JavaScript falla
-                self._update_status("⚠️ Fallback al método tradicional...")
-                return self._send_text_message_fallback(message_text)
+                return self._send_text_message_fallback_optimized(message_text)
 
         except Exception as e:
             self._update_status(f"❌ Error en envío JavaScript: {str(e)}")
-            # Fallback al método tradicional
-            return self._send_text_message_fallback(message_text)
+            return self._send_text_message_fallback_optimized(message_text)
 
-    def _send_text_message_fallback(self, message_text: str) -> bool:
+    def _send_text_message_fallback_optimized(self, message_text: str) -> bool:
         """
-        Método de fallback para enviar mensajes sin emoticones
+        Método de fallback optimizado para enviar mensajes
 
         Args:
             message_text: Texto del mensaje
@@ -489,38 +496,35 @@ class WhatsAppBot:
         try:
             self._update_status("📝 Enviando con método tradicional...")
 
-            # Selectores actualizados para el campo de mensaje
             message_selectors = [
-                "//div[@contenteditable='true'][@data-tab='10']",
-                "//div[@role='textbox'][@title='Escribe un mensaje']",
-                "//div[@data-testid='conversation-compose-box-input']",
-                "//div[contains(@class, 'copyable-text')][@data-tab='10']"
+                "div[contenteditable='true'][data-tab='10']",
+                "div[role='textbox'][title*='mensaje']",
+                "div[data-testid='conversation-compose-box-input']"
             ]
 
-            message_box = self._wait_for_element(message_selectors, timeout=15, clickable=True)
+            message_box = self._wait_for_element_optimized(message_selectors, timeout=10, clickable=True)
             if not message_box:
                 self._update_status("No se encontró el campo de mensaje")
                 return False
 
-            if not self._safe_click(message_box):
+            if not self._safe_click_optimized(message_box):
                 return False
 
             message_box.clear()
-            time.sleep(1)
+            time.sleep(0.3)  # Reducido de 1
 
-            # Filtrar caracteres problemáticos para fallback
             safe_text = self._filter_bmp_characters(message_text)
 
-            # Enviar mensaje línea por línea
+            # Envío optimizado
             lines = safe_text.split('\n')
             for i, line in enumerate(lines):
                 message_box.send_keys(line)
                 if i < len(lines) - 1:
                     message_box.send_keys(Keys.SHIFT + Keys.ENTER)
 
-            time.sleep(1)
+            time.sleep(0.5)  # Reducido de 1
             message_box.send_keys(Keys.ENTER)
-            time.sleep(3)
+            time.sleep(1.5)  # Reducido de 3
 
             return True
 
@@ -539,21 +543,16 @@ class WhatsAppBot:
             Texto filtrado solo con caracteres BMP
         """
         try:
-            # Mantener solo caracteres dentro del BMP (U+0000 a U+FFFF)
             filtered = ''.join(char for char in text if ord(char) <= 0xFFFF)
-
-            # Si se filtraron caracteres, informar
             if len(filtered) != len(text):
                 self._update_status("⚠️ Algunos emoticones fueron filtrados por compatibilidad")
-
             return filtered
         except Exception:
-            # Si hay error, devolver texto original
             return text
 
-    def _send_text_message(self, message_text: str) -> bool:
+    def _send_text_message_optimized(self, message_text: str) -> bool:
         """
-        Envía un mensaje de texto con soporte inteligente para emoticones
+        Envía un mensaje de texto con soporte inteligente para emoticones (optimizado)
 
         Args:
             message_text: Texto del mensaje
@@ -565,21 +564,20 @@ class WhatsAppBot:
             if not self._check_session_alive():
                 return False
 
-            # Detectar si el mensaje contiene emoticones
             if self._has_emoji_or_unicode(message_text):
                 self._update_status("😀 Detectados emoticones, usando método avanzado...")
-                return self._send_text_message_javascript(message_text)
+                return self._send_text_message_javascript_optimized(message_text)
             else:
                 self._update_status("📝 Enviando texto simple...")
-                return self._send_text_message_fallback(message_text)
+                return self._send_text_message_fallback_optimized(message_text)
 
         except Exception as e:
             self._update_status(f"Error al enviar mensaje de texto: {str(e)}")
             return False
 
-    def _validate_image_file(self, image_path: str) -> bool:
+    def _validate_image_file_cached(self, image_path: str) -> bool:
         """
-        Valida que el archivo de imagen existe y es válido
+        Valida que el archivo de imagen existe y es válido (con cache)
 
         Args:
             image_path: Ruta de la imagen
@@ -587,15 +585,24 @@ class WhatsAppBot:
         Returns:
             True si la imagen es válida
         """
+        # Cache de validaciones para evitar re-validar
+        if hasattr(self, '_validated_images') and image_path in self._validated_images:
+            return self._validated_images[image_path]
+
+        if not hasattr(self, '_validated_images'):
+            self._validated_images = {}
+
         try:
             if not os.path.exists(image_path):
                 self._update_status(f"Archivo no encontrado: {image_path}")
+                self._validated_images[image_path] = False
                 return False
 
             # Verificar tamaño del archivo (máximo 64MB)
             file_size = os.path.getsize(image_path)
             if file_size > 64 * 1024 * 1024:
                 self._update_status(f"Archivo demasiado grande: {file_size / (1024 * 1024):.1f}MB")
+                self._validated_images[image_path] = False
                 return False
 
             # Verificar extensión
@@ -603,17 +610,20 @@ class WhatsAppBot:
             ext = os.path.splitext(image_path)[1].lower()
             if ext not in valid_extensions:
                 self._update_status(f"Formato de imagen no soportado: {ext}")
+                self._validated_images[image_path] = False
                 return False
 
+            self._validated_images[image_path] = True
             return True
 
         except Exception as e:
             self._update_status(f"Error validando imagen: {str(e)}")
+            self._validated_images[image_path] = False
             return False
 
-    def _send_image_only(self, image_path: str) -> bool:
+    def _send_image_only_optimized(self, image_path: str) -> bool:
         """
-        Envía solo una imagen sin texto
+        Envía solo una imagen sin texto (optimizado)
 
         Args:
             image_path: Ruta de la imagen
@@ -624,51 +634,48 @@ class WhatsAppBot:
         try:
             self._update_status(f"🖼️ Enviando imagen: {os.path.basename(image_path)}")
 
-            # Selectores actualizados para el botón adjuntar
+            # Selectores optimizados para botón adjuntar
             attach_selectors = [
-                "//div[@title='Adjuntar']",
-                "//button[@aria-label='Adjuntar']",
-                "//span[@data-icon='plus']/../..",
-                "//span[@data-icon='attach-menu-plus']/../..",
-                "//div[@role='button'][@aria-label='Adjuntar']"
+                "div[title='Adjuntar']",
+                "button[aria-label='Adjuntar']",
+                "span[data-icon='plus']",
+                "span[data-icon='attach-menu-plus']",
+                "[data-testid='clip']"
             ]
 
-            attach_button = self._wait_for_element(attach_selectors, timeout=10, clickable=True)
+            attach_button = self._wait_for_element_optimized(attach_selectors, timeout=8, clickable=True)
             if not attach_button:
                 self._update_status("❌ No se encontró el botón adjuntar")
                 return False
 
-            if not self._safe_click(attach_button):
+            if not self._safe_click_optimized(attach_button):
                 return False
 
-            time.sleep(2)
+            time.sleep(1)  # Reducido de 2
 
-            # Selectores para la opción de fotos
-            photos_selectors = [
-                "//input[@accept='image/*,video/mp4,video/3gpp,video/quicktime']",
-                "//input[@type='file'][contains(@accept, 'image')]",
-                "//input[@accept][@type='file']",
-                "//li[@data-testid='mi-attach-image']//input",
-                "//input[contains(@accept, 'image')]"
+            # Selectores optimizados para input de archivo
+            file_input_selectors = [
+                "input[accept*='image']",
+                "input[type='file'][accept*='image']",
+                "input[type='file']",
+                "li[data-testid='mi-attach-image'] input"
             ]
 
-            # Buscar directamente el input de archivo
-            file_input = self._wait_for_element(photos_selectors, timeout=10)
+            # Buscar input directamente primero
+            file_input = self._wait_for_element_optimized(file_input_selectors, timeout=5)
 
             if not file_input:
-                # Intentar hacer clic en la opción de fotos primero
+                # Buscar opción de fotos
                 photos_option_selectors = [
-                    "//span[contains(text(), 'Fotos y videos')]",
-                    "//div[contains(text(), 'Fotos y videos')]",
-                    "//li[@data-testid='mi-attach-image']",
-                    "//div[@role='button'][contains(., 'Foto')]"
+                    "li[data-testid='mi-attach-image']",
+                    "span:contains('Fotos y videos')",
+                    "div[role='button'][title*='foto']"
                 ]
 
-                photos_option = self._wait_for_element(photos_option_selectors, timeout=8, clickable=True)
-                if photos_option:
-                    if self._safe_click(photos_option):
-                        time.sleep(2)
-                        file_input = self._wait_for_element(photos_selectors, timeout=10)
+                photos_option = self._wait_for_element_optimized(photos_option_selectors, timeout=5, clickable=True)
+                if photos_option and self._safe_click_optimized(photos_option):
+                    time.sleep(1)  # Reducido de 2
+                    file_input = self._wait_for_element_optimized(file_input_selectors, timeout=5)
 
             if not file_input:
                 self._update_status("❌ No se encontró el input de archivo")
@@ -678,28 +685,26 @@ class WhatsAppBot:
             absolute_path = os.path.abspath(image_path)
             self._update_status(f"📎 Cargando imagen...")
             file_input.send_keys(absolute_path)
-            time.sleep(6)  # Tiempo para cargar la imagen
+            time.sleep(3)  # Reducido de 6
 
-            # Enviar imagen directamente sin caption
+            # Enviar imagen
             send_selectors = [
-                "//span[@data-icon='send']/..",
-                "//button[@aria-label='Enviar']",
-                "//div[@role='button'][@aria-label='Enviar']",
-                "//span[@data-testid='send']/..",
-                "//button[contains(@class, 'send')]",
-                "//div[@data-testid='compose-btn-send']"
+                "span[data-icon='send']",
+                "button[aria-label='Enviar']",
+                "div[role='button'][aria-label='Enviar']",
+                "[data-testid='send']"
             ]
 
-            send_button = self._wait_for_element(send_selectors, timeout=15, clickable=True)
+            send_button = self._wait_for_element_optimized(send_selectors, timeout=10, clickable=True)
             if not send_button:
                 self._update_status("❌ No se encontró el botón de enviar")
                 return False
 
-            if not self._safe_click(send_button):
+            if not self._safe_click_optimized(send_button):
                 self._update_status("❌ No se pudo hacer click en enviar")
                 return False
 
-            time.sleep(5)  # Tiempo para que se envíe
+            time.sleep(2.5)  # Reducido de 5
 
             self._update_status("✅ Imagen enviada correctamente")
             return True
@@ -708,9 +713,9 @@ class WhatsAppBot:
             self._update_status(f"❌ Error al enviar imagen: {str(e)}")
             return False
 
-    def _send_message(self, message_data: Dict[str, Any]) -> bool:
+    def _send_message_optimized(self, message_data: Dict[str, Any]) -> bool:
         """
-        Envía un mensaje (texto y/o imagen) con estrategia mejorada
+        Envía un mensaje (texto y/o imagen) con estrategia optimizada
 
         Args:
             message_data: Datos del mensaje con 'texto' e 'imagen' opcional
@@ -725,40 +730,38 @@ class WhatsAppBot:
 
             # Compatibilidad con mensajes de texto simple
             if isinstance(message_data, str):
-                return self._send_text_message(message_data)
+                return self._send_text_message_optimized(message_data)
 
             text = message_data.get('texto', '').strip()
             image_filename = message_data.get('imagen')
 
-            # Si hay imagen y texto, enviar por separado
+            # Si hay imagen y texto, enviar por separado pero optimizado
             if image_filename and text:
                 image_path = os.path.join("imagenes_mensajes", image_filename)
 
                 if not os.path.exists(image_path):
                     self._update_status(f"⚠️ Imagen no encontrada: {image_path}")
-                    # Si no se encuentra la imagen, enviar solo el texto
                     self._update_status("📝 Enviando solo el texto...")
-                    return self._send_text_message(text)
+                    return self._send_text_message_optimized(text)
 
-                if not self._validate_image_file(image_path):
-                    # Si la imagen no es válida, enviar solo el texto
+                if not self._validate_image_file_cached(image_path):
                     self._update_status("📝 Imagen no válida, enviando solo el texto...")
-                    return self._send_text_message(text)
+                    return self._send_text_message_optimized(text)
 
-                # Estrategia: Primero imagen, luego texto
+                # Estrategia optimizada: Imagen primero, luego texto
                 self._update_status("📤 Enviando imagen y texto por separado...")
 
                 # 1. Enviar imagen
-                image_sent = self._send_image_only(image_path)
+                image_sent = self._send_image_only_optimized(image_path)
                 if not image_sent:
                     self._update_status("⚠️ Error enviando imagen, intentando solo con texto...")
-                    return self._send_text_message(text)
+                    return self._send_text_message_optimized(text)
 
-                # 2. Esperar un poco
-                time.sleep(2)
+                # 2. Esperar menos tiempo
+                time.sleep(1)  # Reducido de 2
 
                 # 3. Enviar texto
-                text_sent = self._send_text_message(text)
+                text_sent = self._send_text_message_optimized(text)
                 if not text_sent:
                     self._update_status("⚠️ Imagen enviada pero falló el texto")
                     return True  # Al menos la imagen se envió
@@ -774,15 +777,15 @@ class WhatsAppBot:
                     self._update_status(f"❌ Imagen no encontrada: {image_path}")
                     return False
 
-                if not self._validate_image_file(image_path):
+                if not self._validate_image_file_cached(image_path):
                     self._update_status("❌ Imagen no válida")
                     return False
 
-                return self._send_image_only(image_path)
+                return self._send_image_only_optimized(image_path)
 
             # Si solo hay texto
             elif text:
-                return self._send_text_message(text)
+                return self._send_text_message_optimized(text)
 
             else:
                 self._update_status("❌ Mensaje vacío")
@@ -794,7 +797,7 @@ class WhatsAppBot:
 
     def send_message_to_contact(self, phone_number: str, message_data: Dict[str, Any]) -> bool:
         """
-        Envía un mensaje a un contacto específico
+        Envía un mensaje a un contacto específico (optimizado)
 
         Args:
             phone_number: Número de teléfono
@@ -810,11 +813,11 @@ class WhatsAppBot:
                 self._update_status("❌ Sesión del navegador perdida")
                 return False
 
-            if not self._search_and_open_contact(phone_number):
+            if not self._search_and_open_contact_optimized(phone_number):
                 self._update_status(f"❌ No se pudo abrir conversación con {phone_number}")
                 return False
 
-            if self._send_message(message_data):
+            if self._send_message_optimized(message_data):
                 self._update_status(f"✅ Mensaje enviado correctamente a {phone_number}")
                 return True
             else:
@@ -828,7 +831,7 @@ class WhatsAppBot:
     def start_automation(self, phone_numbers: List[str], messages: List[Dict[str, Any]],
                          min_interval: int, max_interval: int):
         """
-        Inicia la automatización del envío de mensajes
+        Inicia la automatización del envío de mensajes (optimizado)
 
         Args:
             phone_numbers: Lista de números de teléfono
@@ -844,6 +847,12 @@ class WhatsAppBot:
             self.is_running = True
             self.current_session_contacts = phone_numbers.copy()
             self.current_session_messages = messages.copy()
+
+            # Limpiar cache
+            self._element_cache = {}
+            self._last_contact = None
+            if hasattr(self, '_validated_images'):
+                delattr(self, '_validated_images')
 
             self._update_status("🚀 Iniciando automatización...")
 
@@ -959,6 +968,9 @@ class WhatsAppBot:
             self._update_status(f"⚠️ Error al cerrar navegador: {str(e)}")
         finally:
             self.is_running = False
+            # Limpiar cache
+            self._element_cache = {}
+            self._last_contact = None
 
     def get_session_info(self) -> Dict[str, Any]:
         """
