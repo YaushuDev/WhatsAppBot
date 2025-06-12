@@ -1,9 +1,10 @@
 # gui_main.py
 """
 Interfaz gráfica principal para el Bot de WhatsApp
-Coordina todos los componentes modulares de la GUI, incluyendo estilos, componentes y pestañas.
-Implementa una interfaz moderna con tema nocturno que permite gestionar números, mensajes
-y controlar la automatización del bot de WhatsApp de forma intuitiva y organizada
+Coordina todos los componentes modulares de la GUI con layout horizontal compacto.
+Implementa una interfaz moderna de 1000x600px que permite gestionar números, mensajes
+y controlar la automatización del bot de WhatsApp de forma intuitiva y organizada,
+optimizada para pantallas de cualquier tamaño.
 """
 
 import tkinter as tk
@@ -19,6 +20,7 @@ class WhatsAppBotGUI:
     """
     Clase principal de la interfaz gráfica del bot de WhatsApp
     Coordina todos los componentes modulares y maneja el ciclo de vida de la aplicación
+    con diseño horizontal compacto optimizado para mejor usabilidad
     """
 
     def __init__(self):
@@ -40,13 +42,13 @@ class WhatsAppBotGUI:
 
     def _setup_application(self):
         """
-        Configura la ventana principal y estilos
+        Configura la ventana principal y estilos con dimensiones horizontales compactas
         """
-        # Configurar ventana principal
+        # Configurar ventana principal con nueva dimensión horizontal
         self.style_manager.configure_window(
             self.root,
             "Bot de WhatsApp",
-            "900x1000",
+            "1050x750",
             "icon.ico"
         )
 
@@ -58,20 +60,20 @@ class WhatsAppBotGUI:
 
     def _create_interface(self):
         """
-        Crea la interfaz principal con layout y componentes
+        Crea la interfaz principal con layout horizontal optimizado
         """
         # Frame principal
         self.main_frame = self.style_manager.create_styled_frame(self.root)
         self.main_frame.pack(fill=tk.BOTH, expand=True)
 
-        # Barra lateral de navegación
+        # Barra lateral de navegación (mantiene su ancho)
         self.sidebar = NavigationSidebar(
             self.main_frame,
             self.style_manager,
             self._on_tab_change
         )
 
-        # Área de contenido para las pestañas
+        # Área de contenido para las pestañas (ahora más ancha y menos alta)
         self.content_area = self.style_manager.create_styled_frame(self.main_frame)
         self.content_area.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 

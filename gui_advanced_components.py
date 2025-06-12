@@ -9,9 +9,8 @@ y otros componentes complejos que requieren lógica de negocio especializada.
 import tkinter as tk
 from tkinter import filedialog, ttk
 import os
-from typing import List, Dict, Any, Optional, Callable
 from gui_styles import StyleManager
-from gui_base_components import show_validation_error, show_success_message, show_error_message
+from gui_base_components import show_validation_error, show_error_message
 
 
 class ContactListManager:

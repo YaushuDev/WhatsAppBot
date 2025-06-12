@@ -2,26 +2,26 @@
 """
 Pestaña de automatización para el Bot de WhatsApp
 Este módulo implementa la funcionalidad de control y configuración de la automatización
-del bot, incluyendo configuración de intervalos, estadísticas en tiempo real y controles
-de inicio/detención con registro de actividad detallado.
+del bot con layout horizontal compacto, donde los controles están a la izquierda y el
+registro de actividad a la derecha. Incluye configuración de intervalos, estadísticas
+en tiempo real y controles de inicio/detención optimizado para pantallas de 1000x600px.
 """
 
 import tkinter as tk
 import threading
 from gui_styles import StyleManager
-from gui_components import (TabHeader, StatsDisplay, ActivityLog,
-                            show_error_message, show_success_message)
+from gui_components import (ActivityLog, show_error_message)
 
 
 class AutomationConfigSection:
     """
-    Sección de configuración de la automatización
-    Maneja los parámetros de intervalos entre mensajes
+    Sección de configuración de la automatización compacta
+    Maneja los parámetros de intervalos entre mensajes optimizada para layout horizontal
     """
 
     def __init__(self, parent, style_manager: StyleManager):
         """
-        Inicializa la sección de configuración
+        Inicializa la sección de configuración compacta
 
         Args:
             parent: Widget padre donde se mostrará la sección
@@ -29,53 +29,45 @@ class AutomationConfigSection:
         """
         self.style_manager = style_manager
 
-        # Crear frame principal de configuración
-        self._create_config_frame(parent)
-        self._create_interval_controls()
+        # Crear frame principal de configuración más compacto
+        self._create_compact_config_frame(parent)
+        self._create_compact_interval_controls()
 
-    def _create_config_frame(self, parent):
+    def _create_compact_config_frame(self, parent):
         """
-        Crea el frame principal de configuración
+        Crea el frame principal de configuración compacto
 
         Args:
             parent: Widget padre
         """
         self.config_frame = self.style_manager.create_styled_labelframe(
             parent,
-            "⚙️ Configuración de Automatización"
+            "⚙️ Configuración"
         )
-        self.config_frame.pack(fill=tk.X, padx=25, pady=(0, 20))
+        self.config_frame.pack(fill=tk.X, padx=0, pady=(0, 8))  # Padding compacto
 
-        # Contenido interno
+        # Contenido interno más compacto
         self.content_frame = self.style_manager.create_styled_frame(self.config_frame)
-        self.content_frame.pack(fill=tk.X, padx=15, pady=15)
+        self.content_frame.pack(fill=tk.X, padx=8, pady=8)  # Padding reducido
 
-    def _create_interval_controls(self):
+    def _create_compact_interval_controls(self):
         """
-        Crea los controles de configuración de intervalos
+        Crea los controles de configuración de intervalos más compactos
         """
-        # Descripción
+        # Descripción más concisa
         description_label = self.style_manager.create_styled_label(
             self.content_frame,
-            "Configura el tiempo de espera entre envío de mensajes para evitar bloqueos:",
-            "secondary"
+            "Tiempo entre mensajes (seg):",
+            "small"
         )
-        description_label.pack(anchor="w", pady=(0, 15))
+        description_label.pack(anchor="w", pady=(0, 6))
 
-        # Label principal
-        interval_label = self.style_manager.create_styled_label(
-            self.content_frame,
-            "Intervalo entre mensajes (segundos):",
-            "normal"
-        )
-        interval_label.pack(anchor="w", pady=(0, 10))
+        # Frame para los inputs más compacto
+        self._create_compact_interval_inputs()
 
-        # Frame para los inputs
-        self._create_interval_inputs()
-
-    def _create_interval_inputs(self):
+    def _create_compact_interval_inputs(self):
         """
-        Crea los campos de entrada para intervalos mínimo y máximo
+        Crea los campos de entrada para intervalos en layout compacto
         """
         inputs_frame = self.style_manager.create_styled_frame(self.content_frame)
         inputs_frame.pack(fill=tk.X)
@@ -88,24 +80,24 @@ class AutomationConfigSection:
 
     def _create_min_interval_input(self, parent):
         """
-        Crea el input para el intervalo mínimo
+        Crea el input para el intervalo mínimo más compacto
 
         Args:
             parent: Widget padre
         """
         min_container = self.style_manager.create_styled_frame(parent)
-        min_container.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 20))
+        min_container.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 6))
 
-        min_label = self.style_manager.create_styled_label(min_container, "Mínimo:", "normal")
+        min_label = self.style_manager.create_styled_label(min_container, "Mín:", "small")
         min_label.pack(anchor="w")
 
         self.min_interval = self.style_manager.create_styled_entry(min_container)
-        self.min_interval.pack(fill=tk.X, pady=(5, 0))
+        self.min_interval.pack(fill=tk.X, pady=(2, 0))  # Espacio reducido
         self.min_interval.insert(0, "30")
 
     def _create_max_interval_input(self, parent):
         """
-        Crea el input para el intervalo máximo
+        Crea el input para el intervalo máximo más compacto
 
         Args:
             parent: Widget padre
@@ -113,11 +105,11 @@ class AutomationConfigSection:
         max_container = self.style_manager.create_styled_frame(parent)
         max_container.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
-        max_label = self.style_manager.create_styled_label(max_container, "Máximo:", "normal")
+        max_label = self.style_manager.create_styled_label(max_container, "Máx:", "small")
         max_label.pack(anchor="w")
 
         self.max_interval = self.style_manager.create_styled_entry(max_container)
-        self.max_interval.pack(fill=tk.X, pady=(5, 0))
+        self.max_interval.pack(fill=tk.X, pady=(2, 0))  # Espacio reducido
         self.max_interval.insert(0, "60")
 
     def get_intervals(self):
@@ -160,13 +152,13 @@ class AutomationConfigSection:
 
 class AutomationControlSection:
     """
-    Sección de controles de automatización
-    Maneja los botones de inicio y detención del bot
+    Sección de controles de automatización compacta
+    Maneja los botones de inicio y detención del bot optimizada para layout horizontal
     """
 
     def __init__(self, parent, style_manager: StyleManager, start_callback=None, stop_callback=None):
         """
-        Inicializa la sección de controles
+        Inicializa la sección de controles compacta
 
         Args:
             parent: Widget padre donde se mostrará la sección
@@ -179,47 +171,43 @@ class AutomationControlSection:
         self.stop_callback = stop_callback
         self.automation_active = False
 
-        # Crear controles
-        self._create_control_frame(parent)
-        self._create_control_buttons()
+        # Crear controles compactos
+        self._create_compact_control_frame(parent)
+        self._create_compact_control_buttons()
 
-    def _create_control_frame(self, parent):
+    def _create_compact_control_frame(self, parent):
         """
-        Crea el frame principal de controles
+        Crea el frame principal de controles compacto
 
         Args:
             parent: Widget padre
         """
         self.control_frame = self.style_manager.create_styled_frame(parent)
-        self.control_frame.pack(fill=tk.X, padx=25, pady=20)
+        self.control_frame.pack(fill=tk.X, padx=0, pady=8)
 
-    def _create_control_buttons(self):
+    def _create_compact_control_buttons(self):
         """
-        Crea los botones de control de automatización
+        Crea los botones de control de automatización más compactos
         """
-        # Botón iniciar
+        # Botón iniciar más compacto
         self.start_btn = self.style_manager.create_styled_button(
             self.control_frame,
-            "▶️ Iniciar Automatización",
+            "▶️ Iniciar",
             self._on_start_clicked,
             "success"
         )
-        self.start_btn.configure(
-            font=self.style_manager.fonts["button_large"],
-            pady=15
-        )
-        self.start_btn.pack(fill=tk.X, pady=(0, 15))
+        self.start_btn.configure(pady=8)  # Altura reducida
+        self.start_btn.pack(fill=tk.X, pady=(0, 6))
 
-        # Botón detener
+        # Botón detener más compacto
         self.stop_btn = self.style_manager.create_styled_button(
             self.control_frame,
-            "⏹️ Detener Automatización",
+            "⏹️ Detener",
             self._on_stop_clicked,
             "error"
         )
         self.stop_btn.configure(
-            font=self.style_manager.fonts["button_large"],
-            pady=15,
+            pady=8,  # Altura reducida
             state="disabled"
         )
         self.stop_btn.pack(fill=tk.X)
@@ -264,15 +252,57 @@ class AutomationControlSection:
         return self.automation_active
 
 
+class CompactStatsDisplay:
+    """
+    Componente compacto para mostrar estadísticas optimizado para layout horizontal
+    """
+
+    def __init__(self, parent, style_manager: StyleManager):
+        """
+        Inicializa el display de estadísticas compacto
+
+        Args:
+            parent: Widget padre
+            style_manager: Gestor de estilos
+        """
+        self.style_manager = style_manager
+
+        # Frame más compacto
+        self.stats_frame = style_manager.create_styled_labelframe(parent, "📊 Estadísticas")
+        self.stats_frame.pack(fill=tk.X, padx=0, pady=(0, 8))
+
+        # Contenido compacto
+        content_frame = style_manager.create_styled_frame(self.stats_frame)
+        content_frame.pack(fill=tk.X, padx=8, pady=6)
+
+        # Estadísticas en columna simple para ahorrar espacio
+        self.stats_numbers = style_manager.create_styled_label(content_frame, "📱 Contactos: 0", "small")
+        self.stats_numbers.pack(anchor="w")
+
+        self.stats_messages = style_manager.create_styled_label(content_frame, "💬 Mensajes: 0", "small")
+        self.stats_messages.pack(anchor="w", pady=(2, 0))
+
+    def update_stats(self, numbers_count, messages_count):
+        """
+        Actualiza las estadísticas mostradas
+
+        Args:
+            numbers_count: Cantidad de contactos
+            messages_count: Cantidad de mensajes
+        """
+        self.stats_numbers.configure(text=f"📱 Contactos: {numbers_count}")
+        self.stats_messages.configure(text=f"💬 Mensajes: {messages_count}")
+
+
 class AutomationTab:
     """
-    Pestaña principal de automatización
-    Coordina la configuración, estadísticas, controles y registro de actividad
+    Pestaña principal de automatización con layout horizontal compacto
+    Coordina la configuración, estadísticas, controles y registro de actividad optimizado para 1000x600px
     """
 
     def __init__(self, parent, style_manager: StyleManager, data_manager, whatsapp_bot, update_stats_callback):
         """
-        Inicializa la pestaña de automatización
+        Inicializa la pestaña de automatización con layout horizontal
 
         Args:
             parent: Widget padre donde se mostrará la pestaña
@@ -289,62 +319,96 @@ class AutomationTab:
         # Frame principal de la pestaña
         self.frame = style_manager.create_styled_frame(parent)
 
-        # Crear componentes de la interfaz
-        self._create_header()
-        self._create_config_section()
-        self._create_stats_section()
-        self._create_control_section()
-        self._create_activity_log()
+        # Crear layout horizontal
+        self._create_horizontal_layout()
 
         # Actualizar estadísticas iniciales
         self._update_stats()
 
-    def _create_header(self):
+    def _create_horizontal_layout(self):
         """
-        Crea la cabecera de la pestaña con título y descripción
+        Crea el layout horizontal principal: controles | log
         """
-        TabHeader(
-            self.frame,
-            self.style_manager,
-            "Automatización",
-            "Controla la automatización del envío de mensajes a tus contactos con soporte completo para emoticones"
-        )
+        # Header compacto
+        self._create_compact_header()
 
-    def _create_config_section(self):
+        # Container principal con layout horizontal
+        main_container = self.style_manager.create_styled_frame(self.frame)
+        main_container.pack(fill=tk.BOTH, expand=True, padx=12, pady=8)
+
+        # Columna izquierda: Controles y configuración (40%)
+        self.left_column = self.style_manager.create_styled_frame(main_container)
+        self.left_column.pack(side=tk.LEFT, fill=tk.BOTH, padx=(0, 8))
+        self.left_column.configure(width=400)  # Ancho fijo
+        self.left_column.pack_propagate(False)
+
+        # Columna derecha: Activity log (60%)
+        self.right_column = self.style_manager.create_styled_frame(main_container)
+        self.right_column.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(8, 0))
+
+        # Crear componentes en cada columna
+        self._create_left_column_components()
+        self._create_right_column_components()
+
+    def _create_compact_header(self):
         """
-        Crea la sección de configuración de automatización
+        Crea la cabecera compacta de la pestaña
         """
+        # Container del header con padding reducido
+        header_container = self.style_manager.create_styled_frame(self.frame)
+        header_container.pack(fill=tk.X, padx=12, pady=(12, 8))
+
+        # Título
+        title_label = self.style_manager.create_styled_label(header_container, "Automatización", "title")
+        title_label.pack(anchor="w")
+
+        # Descripción más concisa
+        desc_label = self.style_manager.create_styled_label(
+            header_container,
+            "Controla la automatización del envío de mensajes",
+            "secondary"
+        )
+        desc_label.pack(anchor="w", pady=(4, 0))
+
+        # Línea separadora más sutil
+        separator = self.style_manager.create_styled_frame(header_container, "accent")
+        separator.configure(height=1)
+        separator.pack(fill=tk.X, pady=(8, 0))
+
+    def _create_left_column_components(self):
+        """
+        Crea los componentes de la columna izquierda (controles)
+        """
+        # Configuración de automatización
         self.config_section = AutomationConfigSection(
-            self.frame,
+            self.left_column,
             self.style_manager
         )
 
-    def _create_stats_section(self):
-        """
-        Crea la sección de estadísticas
-        """
-        self.stats_display = StatsDisplay(self.frame, self.style_manager)
+        # Estadísticas compactas
+        self.stats_display = CompactStatsDisplay(self.left_column, self.style_manager)
 
-    def _create_control_section(self):
-        """
-        Crea la sección de controles de automatización
-        """
+        # Controles de automatización
         self.control_section = AutomationControlSection(
-            self.frame,
+            self.left_column,
             self.style_manager,
             start_callback=self._start_automation,
             stop_callback=self._stop_automation
         )
 
-    def _create_activity_log(self):
+    def _create_right_column_components(self):
         """
-        Crea el registro de actividad
+        Crea los componentes de la columna derecha (activity log)
         """
+        # Activity log que ocupa toda la columna derecha
         self.activity_log = ActivityLog(
-            self.frame,
+            self.right_column,
             self.style_manager,
             "📋 Registro de Actividad"
         )
+
+        # Ajustar padding para layout compacto
+        self.activity_log.log_text.master.master.pack_configure(padx=0, pady=(0, 8))
 
     def _start_automation(self):
         """

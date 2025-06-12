@@ -2,7 +2,8 @@
 """
 Gestor de estilos y configuración visual para el Bot de WhatsApp
 Centraliza toda la configuración de colores, estilos y temas de la interfaz gráfica,
-proporcionando un tema moderno con paleta verde armónica y diseño mejorado
+proporcionando un tema moderno con paleta verde armónica y diseño horizontal compacto
+optimizado para pantallas de cualquier tamaño y resolución.
 """
 
 import tkinter as tk
@@ -12,11 +13,13 @@ from tkinter import ttk
 class StyleManager:
     """
     Gestor centralizado de estilos para la GUI del bot de WhatsApp
+    Optimizado para layout horizontal compacto de 1000x600px
     """
 
     def __init__(self):
         """
         Inicializa el gestor de estilos con paleta verde armónica
+        y configuraciones optimizadas para layout horizontal
         """
         # Paleta de colores verde armónica y moderna
         self.colors = {
@@ -38,24 +41,24 @@ class StyleManager:
             "hover": "#262c36"  # Color hover
         }
 
-        # Configuración de fuentes mejorada
+        # Configuración de fuentes optimizada para espacio compacto
         self.fonts = {
-            "title": ("Segoe UI", 20, "bold"),
-            "subtitle": ("Segoe UI", 16, "bold"),
-            "heading": ("Segoe UI", 13, "bold"),
-            "normal": ("Segoe UI", 10),
-            "button": ("Segoe UI", 10, "bold"),
-            "button_large": ("Segoe UI", 11, "bold"),
-            "small": ("Segoe UI", 9),
-            "console": ("Consolas", 9)
+            "title": ("Segoe UI", 18, "bold"),  # Reducido de 20 a 18
+            "subtitle": ("Segoe UI", 14, "bold"),  # Reducido de 16 a 14
+            "heading": ("Segoe UI", 12, "bold"),  # Reducido de 13 a 12
+            "normal": ("Segoe UI", 9),  # Reducido de 10 a 9
+            "button": ("Segoe UI", 9, "bold"),  # Reducido de 10 a 9
+            "button_large": ("Segoe UI", 10, "bold"),  # Reducido de 11 a 10
+            "small": ("Segoe UI", 8),  # Reducido de 9 a 8
+            "console": ("Consolas", 8)  # Reducido de 9 a 8
         }
 
-        # Configuración de espaciado
+        # Configuración de espaciado compacto para layout horizontal
         self.spacing = {
-            "small": 5,
-            "medium": 10,
-            "large": 20,
-            "xlarge": 30
+            "small": 3,  # Reducido de 5 a 3
+            "medium": 6,  # Reducido de 10 a 6
+            "large": 12,  # Reducido de 20 a 12
+            "xlarge": 18  # Reducido de 30 a 18
         }
 
     def setup_ttk_styles(self):
@@ -68,13 +71,13 @@ class StyleManager:
         style.configure("Sidebar.TFrame", background=self.colors["bg_secondary"])
         style.configure("Content.TFrame", background=self.colors["bg_primary"])
 
-        # Estilos para botones de navegación
+        # Estilos para botones de navegación más compactos
         style.configure("SidebarButton.TButton",
                         background=self.colors["bg_secondary"],
                         foreground=self.colors["text_primary"],
                         borderwidth=0,
                         focuscolor='none',
-                        padding=(15, 12))
+                        padding=(12, 8))  # Reducido de (15, 12) a (12, 8)
         style.map("SidebarButton.TButton",
                   background=[('active', self.colors["hover"])])
 
@@ -83,15 +86,15 @@ class StyleManager:
                         foreground=self.colors["text_primary"],
                         borderwidth=0,
                         focuscolor='none',
-                        padding=(15, 12))
+                        padding=(12, 8))  # Reducido de (15, 12) a (12, 8)
 
-        # Estilos para botones de acción
+        # Estilos para botones de acción más compactos
         style.configure("Action.TButton",
                         background=self.colors["accent"],
                         foreground=self.colors["text_primary"],
                         borderwidth=1,
                         focuscolor='none',
-                        padding=(10, 8))
+                        padding=(8, 6))  # Reducido de (10, 8) a (8, 6)
         style.map("Action.TButton",
                   background=[('active', self.colors["accent_light"])])
 
@@ -105,14 +108,14 @@ class StyleManager:
         Args:
             style: Instancia de ttk.Style
         """
-        # Configurar estilo personalizado para Treeview
+        # Configurar estilo personalizado para Treeview más compacto
         style.configure("Dark.Treeview",
                         background=self.colors["bg_card"],
                         foreground=self.colors["text_primary"],
                         fieldbackground=self.colors["bg_card"],
                         borderwidth=0,
                         relief="flat",
-                        rowheight=25)
+                        rowheight=20)  # Reducido de 25 a 20
 
         # Configurar headers del Treeview
         style.configure("Dark.Treeview.Heading",
@@ -135,7 +138,7 @@ class StyleManager:
 
     def create_styled_button(self, parent, text, command=None, style="normal", **kwargs):
         """
-        Crea un botón con estilo personalizado mejorado
+        Crea un botón con estilo personalizado compacto
 
         Args:
             parent: Widget padre
@@ -178,13 +181,13 @@ class StyleManager:
 
         config = style_configs.get(style, style_configs["normal"])
 
-        # Configuración base del botón mejorada
+        # Configuración base del botón más compacta
         button_config = {
             "font": self.fonts["button"],
             "border": 0,
             "cursor": "hand2",
-            "pady": 10,
-            "padx": 20,
+            "pady": 6,  # Reducido de 10 a 6
+            "padx": 12,  # Reducido de 20 a 12
             "relief": "flat",
             "bd": 0,
             **config,
@@ -259,7 +262,7 @@ class StyleManager:
 
     def create_styled_entry(self, parent, **kwargs):
         """
-        Crea un campo de entrada con estilo personalizado mejorado
+        Crea un campo de entrada con estilo personalizado compacto
 
         Args:
             parent: Widget padre
@@ -286,7 +289,7 @@ class StyleManager:
 
     def create_styled_listbox(self, parent, **kwargs):
         """
-        Crea una listbox con estilo personalizado mejorado
+        Crea una listbox con estilo personalizado y altura más compacta
 
         Args:
             parent: Widget padre
@@ -295,6 +298,9 @@ class StyleManager:
         Returns:
             Widget Listbox configurado
         """
+        # Altura por defecto más compacta para layout horizontal
+        default_height = kwargs.get('height', 6)  # Reducido de 8 a 6
+
         listbox_config = {
             "font": self.fonts["normal"],
             "bg": self.colors["bg_card"],
@@ -306,6 +312,7 @@ class StyleManager:
             "borderwidth": 1,
             "highlightthickness": 0,
             "activestyle": "none",
+            "height": default_height,
             **kwargs
         }
 
@@ -345,7 +352,7 @@ class StyleManager:
 
     def create_styled_labelframe(self, parent, text, **kwargs):
         """
-        Crea un LabelFrame con estilo personalizado mejorado
+        Crea un LabelFrame con estilo personalizado compacto
 
         Args:
             parent: Widget padre
@@ -370,14 +377,14 @@ class StyleManager:
 
         return tk.LabelFrame(parent, **labelframe_config)
 
-    def configure_window(self, window, title="Bot de WhatsApp", size="950x650", icon_path="icon.ico"):
+    def configure_window(self, window, title="Bot de WhatsApp", size="1000x600", icon_path="icon.ico"):
         """
-        Configura una ventana con el estilo del tema mejorado
+        Configura una ventana con el estilo del tema optimizado para layout horizontal
 
         Args:
             window: Ventana a configurar
             title: Título de la ventana
-            size: Tamaño de la ventana
+            size: Tamaño de la ventana (ahora por defecto 1000x600)
             icon_path: Ruta del icono
         """
         window.title(title)

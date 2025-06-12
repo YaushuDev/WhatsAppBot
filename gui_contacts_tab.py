@@ -1,14 +1,15 @@
 # gui_contacts_tab.py
 """
 Pestaña de gestión de contactos para el Bot de WhatsApp
-Este módulo implementa toda la funcionalidad relacionada con la administración de contactos,
-incluyendo gestión manual individual y carga masiva desde archivos Excel. Proporciona
-una interfaz intuitiva con sub-pestañas para diferentes métodos de gestión de contactos.
+Este módulo implementa toda la funcionalidad relacionada con la administración de contactos
+con layout horizontal compacto, donde la entrada de datos está a la izquierda y la lista de
+contactos a la derecha. Incluye gestión manual individual y carga masiva desde archivos Excel
+optimizada para pantallas de 1000x600px.
 """
 
 import tkinter as tk
 from gui_styles import StyleManager
-from gui_components import (TabHeader, SubTabNavigator, ContactListManager,
+from gui_components import (SubTabNavigator, ContactListManager,
                             ContactInputSection, ExcelUploadComponent, ContactEditDialog,
                             show_validation_error, show_success_message,
                             show_error_message, show_confirmation_dialog)
@@ -17,12 +18,12 @@ from gui_components import (TabHeader, SubTabNavigator, ContactListManager,
 class ManualManagementSubTab:
     """
     Sub-pestaña para gestión manual de contactos individuales
-    Permite agregar, editar y eliminar contactos uno por uno de forma intuitiva
+    Implementa layout horizontal: entrada a la izquierda, lista a la derecha
     """
 
     def __init__(self, parent, style_manager: StyleManager, data_manager):
         """
-        Inicializa la sub-pestaña de gestión manual
+        Inicializa la sub-pestaña de gestión manual con layout horizontal
 
         Args:
             parent: Widget padre donde se mostrará la sub-pestaña
@@ -35,85 +36,86 @@ class ManualManagementSubTab:
         # Frame principal de la sub-pestaña
         self.frame = style_manager.create_styled_frame(parent)
 
-        # Crear componentes de la interfaz
-        self._create_input_section()
-        self._create_list_section()
+        # Crear layout horizontal
+        self._create_horizontal_layout()
 
         # Cargar contactos existentes
         self._refresh_contacts()
 
+    def _create_horizontal_layout(self):
+        """
+        Crea el layout horizontal principal: entrada | lista
+        """
+        # Frame principal horizontal con padding compacto
+        main_container = self.style_manager.create_styled_frame(self.frame)
+        main_container.pack(fill=tk.BOTH, expand=True, padx=12, pady=8)
+
+        # Columna izquierda: Entrada de contactos (40% del ancho)
+        self.left_column = self.style_manager.create_styled_frame(main_container)
+        self.left_column.pack(side=tk.LEFT, fill=tk.BOTH, padx=(0, 8))
+        self.left_column.configure(width=400)
+        self.left_column.pack_propagate(False)
+
+        # Columna derecha: Lista de contactos (60% del ancho)
+        self.right_column = self.style_manager.create_styled_frame(main_container)
+        self.right_column.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(8, 0))
+
+        # Crear componentes en cada columna
+        self._create_input_section()
+        self._create_list_section()
+
     def _create_input_section(self):
         """
-        Crea la sección de entrada para nuevos contactos
-        Incluye campos para nombre y número con validación
+        Crea la sección de entrada en la columna izquierda
         """
         self.input_section = ContactInputSection(
-            self.frame,
+            self.left_column,
             self.style_manager,
             "Nuevo contacto:",
             self._add_contact
         )
+        self.input_section.input_frame.pack_configure(padx=0, pady=(0, 12))
 
     def _create_list_section(self):
         """
-        Crea la sección de lista de contactos con botones de acción
-        Permite visualizar, editar y eliminar contactos existentes
+        Crea la sección de lista en la columna derecha
         """
         self.list_manager = ContactListManager(
-            self.frame,
+            self.right_column,
             self.style_manager,
             "Contactos guardados:",
             edit_callback=self._edit_contact,
             delete_callback=self._delete_contact,
             clear_all_callback=self._clear_all_contacts
         )
+        self.list_manager.list_frame.pack_configure(padx=0, pady=(0, 12))
 
     def _add_contact(self):
         """
         Agrega un nuevo contacto al sistema
-        Valida los datos ingresados y proporciona feedback al usuario
         """
         name, number = self.input_section.get_values()
 
-        # Validar nombre
         if not name:
             show_validation_error("Por favor ingresa el nombre del contacto")
             self.input_section.focus_name()
             return
 
-        # Validar número
         if not number:
             show_validation_error("Por favor ingresa el número de teléfono")
             return
 
-        # Intentar agregar el contacto
         if self.data_manager.add_contact(name, number):
-            self._on_contact_added_successfully(name)
+            self.input_section.clear_values()
+            self.input_section.focus_name()
+            self._refresh_contacts()
+            show_success_message(f"Contacto '{name}' agregado correctamente")
         else:
-            self._on_contact_add_failed()
-
-    def _on_contact_added_successfully(self, name):
-        """
-        Maneja el flujo cuando un contacto se agrega exitosamente
-
-        Args:
-            name: Nombre del contacto agregado
-        """
-        self.input_section.clear_values()
-        self.input_section.focus_name()
-        self._refresh_contacts()
-        show_success_message(f"Contacto '{name}' agregado correctamente")
-
-    def _on_contact_add_failed(self):
-        """
-        Maneja el flujo cuando falla la adición de un contacto
-        """
-        show_error_message("El número ya existe o es inválido")
+            show_error_message("El número ya existe o es inválido")
 
     def _edit_contact(self):
         """
         Edita el contacto seleccionado en la lista
-        Abre un diálogo modal para modificar los datos del contacto
         """
         index, display_text = self.list_manager.get_selection()
 
@@ -121,23 +123,11 @@ class ManualManagementSubTab:
             show_validation_error("Por favor selecciona un contacto para editar")
             return
 
-        # Obtener datos actuales del contacto
         contact_data = self.data_manager.get_contact_by_index(index)
         if not contact_data:
             show_error_message("Contacto no encontrado")
             return
 
-        # Crear diálogo de edición
-        self._show_edit_dialog(contact_data, index)
-
-    def _show_edit_dialog(self, contact_data, index):
-        """
-        Muestra el diálogo de edición de contacto
-
-        Args:
-            contact_data: Datos actuales del contacto
-            index: Índice del contacto en la lista
-        """
         def on_edit_complete(new_data):
             if new_data and self.data_manager.update_contact(index, new_data['nombre'], new_data['numero']):
                 self._refresh_contacts()
@@ -162,41 +152,18 @@ class ManualManagementSubTab:
             show_validation_error("Por favor selecciona un contacto para eliminar")
             return
 
-        # Extraer nombre del display text para mostrar en confirmación
-        contact_name = self._extract_contact_name(display_text)
+        contact_name = display_text.split(" - ")[0] if " - " in display_text else "este contacto"
 
         if show_confirmation_dialog(f"¿Eliminar {contact_name}?"):
-            self._perform_contact_deletion(index)
-
-    def _extract_contact_name(self, display_text):
-        """
-        Extrae el nombre del contacto del texto mostrado en la lista
-
-        Args:
-            display_text: Texto completo mostrado en la lista
-
-        Returns:
-            str: Nombre del contacto o texto genérico
-        """
-        return display_text.split(" - ")[0] if " - " in display_text else "este contacto"
-
-    def _perform_contact_deletion(self, index):
-        """
-        Ejecuta la eliminación del contacto
-
-        Args:
-            index: Índice del contacto a eliminar
-        """
-        if self.data_manager.remove_contact(index):
-            self._refresh_contacts()
-            show_success_message("Contacto eliminado correctamente")
-        else:
-            show_error_message("Error al eliminar contacto")
+            if self.data_manager.remove_contact(index):
+                self._refresh_contacts()
+                show_success_message("Contacto eliminado correctamente")
+            else:
+                show_error_message("Error al eliminar contacto")
 
     def _clear_all_contacts(self):
         """
         Elimina todos los contactos después de confirmación
-        Operación irreversible que requiere doble confirmación
         """
         contacts = self.data_manager.get_contacts()
 
@@ -206,25 +173,15 @@ class ManualManagementSubTab:
 
         count = len(contacts)
         if show_confirmation_dialog(f"¿Eliminar TODOS los {count} contactos?\n\nEsta acción no se puede deshacer."):
-            self._perform_bulk_deletion(count)
-
-    def _perform_bulk_deletion(self, count):
-        """
-        Ejecuta la eliminación masiva de contactos
-
-        Args:
-            count: Número de contactos a eliminar (para mostrar en mensaje)
-        """
-        if self.data_manager.clear_all_contacts():
-            self._refresh_contacts()
-            show_success_message(f"Se eliminaron {count} contactos correctamente")
-        else:
-            show_error_message("Error al eliminar contactos")
+            if self.data_manager.clear_all_contacts():
+                self._refresh_contacts()
+                show_success_message(f"Se eliminaron {count} contactos correctamente")
+            else:
+                show_error_message("Error al eliminar contactos")
 
     def _refresh_contacts(self):
         """
         Actualiza la lista visual de contactos
-        Sincroniza la interfaz con los datos almacenados
         """
         contacts = self.data_manager.get_contacts()
         self.list_manager.clear_and_populate(contacts)
@@ -232,16 +189,12 @@ class ManualManagementSubTab:
     def get_frame(self):
         """
         Retorna el frame principal de la sub-pestaña
-
-        Returns:
-            tk.Frame: Frame contenedor de todos los widgets
         """
         return self.frame
 
     def on_show(self):
         """
         Callback ejecutado cuando se muestra la sub-pestaña
-        Actualiza la información mostrada
         """
         self._refresh_contacts()
 
@@ -249,7 +202,7 @@ class ManualManagementSubTab:
 class BulkLoadSubTab:
     """
     Sub-pestaña para carga masiva de contactos desde archivos Excel
-    Permite importar grandes cantidades de contactos de forma eficiente
+    Optimizada para layout horizontal compacto
     """
 
     def __init__(self, parent, style_manager: StyleManager, data_manager):
@@ -267,72 +220,55 @@ class BulkLoadSubTab:
         # Frame principal de la sub-pestaña
         self.frame = style_manager.create_styled_frame(parent)
 
-        # Crear componentes de la interfaz
-        self._create_excel_component()
-        self._create_import_stats()
+        # Crear layout optimizado
+        self._create_optimized_layout()
 
-    def _create_excel_component(self):
+    def _create_optimized_layout(self):
         """
-        Crea el componente principal de carga de Excel
-        Incluye selección de archivo, configuración y vista previa
+        Crea el layout optimizado para la carga masiva
         """
+        # Container principal con padding reducido
+        main_container = self.style_manager.create_styled_frame(self.frame)
+        main_container.pack(fill=tk.BOTH, expand=True, padx=12, pady=8)
+
+        # Crear componente Excel optimizado
+        self._create_excel_section(main_container)
+
+    def _create_excel_section(self, parent):
+        """
+        Crea la sección de Excel optimizada
+
+        Args:
+            parent: Widget padre
+        """
+        # Usar el componente original pero sin duplicar botones
         self.excel_component = ExcelUploadComponent(
-            self.frame,
+            parent,
             self.style_manager,
             self._import_contacts
         )
 
-    def _create_import_stats(self):
+        # Modificar el mensaje de configuración de columnas
+        self._update_column_instruction()
+
+    def _update_column_instruction(self):
         """
-        Crea la sección de estadísticas de importación
-        Muestra información sobre contactos actuales y últimas importaciones
+        Actualiza las instrucciones de configuración de columnas para ser más concisas
         """
-        stats_frame = self.style_manager.create_styled_labelframe(
-            self.frame,
-            "📊 Estadísticas de Importación"
-        )
-        stats_frame.pack(fill=tk.X, padx=25, pady=(15, 0))
-
-        content = self.style_manager.create_styled_frame(stats_frame)
-        content.pack(fill=tk.X, padx=15, pady=12)
-
-        # Contenedor para estadísticas en columnas
-        self._create_stats_layout(content)
-
-        # Actualizar estadísticas iniciales
-        self._update_stats()
-
-    def _create_stats_layout(self, parent):
-        """
-        Crea el layout de las estadísticas en columnas
-
-        Args:
-            parent: Widget padre para el layout de estadísticas
-        """
-        stats_container = self.style_manager.create_styled_frame(parent)
-        stats_container.pack(fill=tk.X)
-
-        # Columnas de estadísticas
-        left_col = self.style_manager.create_styled_frame(stats_container)
-        left_col.pack(side=tk.LEFT, fill=tk.X, expand=True)
-
-        right_col = self.style_manager.create_styled_frame(stats_container)
-        right_col.pack(side=tk.RIGHT, fill=tk.X, expand=True)
-
-        # Labels de estadísticas
-        self.current_contacts_label = self.style_manager.create_styled_label(
-            left_col,
-            "📱 Contactos actuales: 0",
-            "normal"
-        )
-        self.current_contacts_label.pack(anchor="w")
-
-        self.last_import_label = self.style_manager.create_styled_label(
-            right_col,
-            "📥 Última importación: -",
-            "normal"
-        )
-        self.last_import_label.pack(anchor="e")
+        try:
+            # Buscar y actualizar el label de instrucciones
+            for widget in self.excel_component.main_frame.winfo_children():
+                for subwidget in widget.winfo_children():
+                    if hasattr(subwidget, 'cget') and hasattr(subwidget, 'configure'):
+                        try:
+                            text = subwidget.cget('text')
+                            if 'Especifica los nombres' in text:
+                                subwidget.configure(text="Nombres de columnas (no importa mayúsculas):")
+                                break
+                        except:
+                            continue
+        except:
+            pass
 
     def _import_contacts(self, contacts_data):
         """
@@ -349,114 +285,57 @@ class BulkLoadSubTab:
             # Realizar importación masiva
             added_count, total_count = self.data_manager.add_contacts_bulk(contacts_data)
 
-            # Actualizar estadísticas
-            self._update_stats()
-
-            # Mostrar resultado de la importación
+            # Mostrar resultado
             self._show_import_result(added_count, total_count)
-
-            # Actualizar label de última importación
-            self._update_last_import_label(added_count, total_count)
 
         except Exception as e:
             show_error_message(f"Error durante la importación: {str(e)}")
 
     def _show_import_result(self, added_count, total_count):
         """
-        Muestra el resultado de la importación al usuario
+        Muestra el resultado de la importación
 
         Args:
             added_count: Número de contactos importados exitosamente
             total_count: Número total de contactos procesados
         """
         if added_count == total_count:
-            self._show_complete_success(added_count)
+            show_success_message(f"¡Importación exitosa!\n\nSe importaron {added_count} contactos correctamente")
         elif added_count > 0:
-            self._show_partial_success(added_count, total_count)
+            duplicates = total_count - added_count
+            show_success_message(
+                f"Importación parcial completada:\n\n"
+                f"✅ Importados: {added_count} contactos\n"
+                f"⚠️ Omitidos: {duplicates} (duplicados o inválidos)"
+            )
         else:
-            self._show_import_failure(total_count)
-
-    def _show_complete_success(self, added_count):
-        """
-        Muestra mensaje de éxito completo
-
-        Args:
-            added_count: Número de contactos importados
-        """
-        show_success_message(f"¡Importación exitosa!\n\nSe importaron {added_count} contactos correctamente")
-
-    def _show_partial_success(self, added_count, total_count):
-        """
-        Muestra mensaje de éxito parcial
-
-        Args:
-            added_count: Número de contactos importados
-            total_count: Número total de contactos procesados
-        """
-        duplicates = total_count - added_count
-        show_success_message(
-            f"Importación parcial completada:\n\n"
-            f"✅ Importados: {added_count} contactos\n"
-            f"⚠️ Omitidos: {duplicates} (duplicados o inválidos)"
-        )
-
-    def _show_import_failure(self, total_count):
-        """
-        Muestra mensaje de fallo en importación
-
-        Args:
-            total_count: Número total de contactos que se intentó procesar
-        """
-        show_error_message(
-            f"No se pudo importar ningún contacto.\n"
-            f"Todos los {total_count} contactos ya existen o son inválidos."
-        )
-
-    def _update_last_import_label(self, added_count, total_count):
-        """
-        Actualiza el label de última importación
-
-        Args:
-            added_count: Contactos importados exitosamente
-            total_count: Total de contactos procesados
-        """
-        self.last_import_label.configure(
-            text=f"📥 Última importación: {added_count}/{total_count}"
-        )
-
-    def _update_stats(self):
-        """
-        Actualiza las estadísticas mostradas en la interfaz
-        """
-        contacts_count = len(self.data_manager.get_contacts())
-        self.current_contacts_label.configure(text=f"📱 Contactos actuales: {contacts_count}")
+            show_error_message(
+                f"No se pudo importar ningún contacto.\n"
+                f"Todos los {total_count} contactos ya existen o son inválidos."
+            )
 
     def get_frame(self):
         """
         Retorna el frame principal de la sub-pestaña
-
-        Returns:
-            tk.Frame: Frame contenedor de todos los widgets
         """
         return self.frame
 
     def on_show(self):
         """
         Callback ejecutado cuando se muestra la sub-pestaña
-        Actualiza las estadísticas mostradas
         """
-        self._update_stats()
+        pass
 
 
 class NumbersTab:
     """
-    Pestaña principal de gestión de contactos
-    Coordina las sub-pestañas de gestión manual y carga masiva
+    Pestaña principal de gestión de contactos con layout horizontal compacto
+    Coordina las sub-pestañas de gestión manual y carga masiva optimizadas para 1000x600px
     """
 
     def __init__(self, parent, style_manager: StyleManager, data_manager):
         """
-        Inicializa la pestaña principal de contactos
+        Inicializa la pestaña principal de contactos con layout compacto
 
         Args:
             parent: Widget padre donde se mostrará la pestaña
@@ -470,29 +349,56 @@ class NumbersTab:
         # Frame principal de la pestaña
         self.frame = style_manager.create_styled_frame(parent)
 
-        # Crear componentes de la interfaz
-        self._create_header()
-        self._create_subtab_navigation()
-        self._create_subtab_content_area()
-        self._create_subtabs()
+        # Crear interfaz compacta
+        self._create_compact_interface()
 
         # Mostrar sub-pestaña inicial
         self._show_subtab("manual")
 
-    def _create_header(self):
+    def _create_compact_interface(self):
         """
-        Crea la cabecera de la pestaña con título y descripción
+        Crea la interfaz compacta con header y navegación optimizada
         """
-        TabHeader(
-            self.frame,
-            self.style_manager,
-            "Gestión de Contactos",
-            "Administra los contactos a los que se enviarán mensajes, usando gestión manual o carga masiva"
+        # Header más compacto
+        self._create_compact_header()
+
+        # Navegación de sub-pestañas
+        self._create_subtab_navigation()
+
+        # Área de contenido
+        self._create_subtab_content_area()
+
+        # Sub-pestañas
+        self._create_subtabs()
+
+    def _create_compact_header(self):
+        """
+        Crea la cabecera compacta de la pestaña
+        """
+        # Container del header con padding reducido
+        header_container = self.style_manager.create_styled_frame(self.frame)
+        header_container.pack(fill=tk.X, padx=12, pady=(12, 8))
+
+        # Título
+        title_label = self.style_manager.create_styled_label(header_container, "Gestión de Contactos", "title")
+        title_label.pack(anchor="w")
+
+        # Descripción más concisa
+        desc_label = self.style_manager.create_styled_label(
+            header_container,
+            "Administra contactos usando gestión manual o carga masiva",
+            "secondary"
         )
+        desc_label.pack(anchor="w", pady=(4, 0))
+
+        # Línea separadora más sutil
+        separator = self.style_manager.create_styled_frame(header_container, "accent")
+        separator.configure(height=1)
+        separator.pack(fill=tk.X, pady=(8, 0))
 
     def _create_subtab_navigation(self):
         """
-        Crea el navegador de sub-pestañas
+        Crea el navegador de sub-pestañas compacto
         """
         subtabs_info = [
             ("manual", "Gestión Manual", "✏️"),
@@ -505,6 +411,9 @@ class NumbersTab:
             subtabs_info,
             self._on_subtab_change
         )
+
+        # Ajustar padding del navegador
+        self.subtab_navigator.nav_frame.pack_configure(padx=12, pady=(0, 8))
 
     def _create_subtab_content_area(self):
         """
@@ -546,15 +455,16 @@ class NumbersTab:
         Args:
             subtab_id: ID de la sub-pestaña a mostrar
         """
-        # Validar que la sub-pestaña existe
         if subtab_id not in self.subtabs:
             return
 
         # Ocultar todas las sub-pestañas
-        self._hide_all_subtabs()
+        for subtab in self.subtabs.values():
+            subtab.get_frame().pack_forget()
 
         # Mostrar la sub-pestaña seleccionada
-        self._show_specific_subtab(subtab_id)
+        target_subtab = self.subtabs[subtab_id]
+        target_subtab.get_frame().pack(fill=tk.BOTH, expand=True)
 
         # Actualizar estado
         self.current_subtab = subtab_id
@@ -562,40 +472,19 @@ class NumbersTab:
         # Actualizar navegador visual
         self.subtab_navigator.set_active_tab(subtab_id)
 
-    def _hide_all_subtabs(self):
-        """
-        Oculta todas las sub-pestañas
-        """
-        for subtab in self.subtabs.values():
-            subtab.get_frame().pack_forget()
-
-    def _show_specific_subtab(self, subtab_id):
-        """
-        Muestra una sub-pestaña específica
-
-        Args:
-            subtab_id: ID de la sub-pestaña a mostrar
-        """
-        target_subtab = self.subtabs[subtab_id]
-        target_subtab.get_frame().pack(fill=tk.BOTH, expand=True)
-
-        # Ejecutar callback de la sub-pestaña si existe
+        # Ejecutar callback si existe
         if hasattr(target_subtab, 'on_show'):
             target_subtab.on_show()
 
     def get_frame(self):
         """
         Retorna el frame principal de la pestaña
-
-        Returns:
-            tk.Frame: Frame contenedor de toda la pestaña
         """
         return self.frame
 
     def on_show(self):
         """
         Callback ejecutado cuando se muestra la pestaña principal
-        Notifica a la sub-pestaña actual para que actualice su contenido
         """
         if self.current_subtab in self.subtabs:
             current_subtab = self.subtabs[self.current_subtab]

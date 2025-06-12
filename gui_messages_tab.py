@@ -1,14 +1,16 @@
 # gui_messages_tab.py
 """
 Pestaña principal de gestión de mensajes para el Bot de WhatsApp.
-Este módulo coordina los componentes de entrada y edición de mensajes, proporcionando
-una interfaz unificada para la gestión completa de mensajes con texto, imágenes y emoticones.
-Reutiliza componentes modularizados para mantener el código limpio y escalable.
+Este módulo coordina los componentes de entrada y edición de mensajes con layout horizontal
+compacto donde la creación está a la izquierda y la lista a la derecha. Proporciona una
+interfaz unificada para la gestión completa de mensajes con texto, imágenes y emoticones
+optimizada para pantallas de 1000x600px.
 """
 
 import re
+import tkinter as tk
 from gui_styles import StyleManager
-from gui_components import (TabHeader, ListManager, show_validation_error,
+from gui_components import (ListManager, show_validation_error,
                             show_success_message, show_error_message, show_confirmation_dialog)
 from gui_message_input import MessageInputSection
 from gui_message_dialog import MessageEditDialog
@@ -18,6 +20,7 @@ class MessageListManager:
     """
     Gestor especializado para la lista de mensajes con indicadores visuales
     Se encarga de formatear y mostrar mensajes con iconos informativos
+    Optimizado para layout horizontal compacto
     """
 
     def __init__(self, parent, style_manager: StyleManager, edit_callback=None, delete_callback=None):
@@ -34,7 +37,7 @@ class MessageListManager:
         self.edit_callback = edit_callback
         self.delete_callback = delete_callback
 
-        # Crear lista usando el componente base
+        # Crear lista usando el componente base con altura compacta
         self.list_manager = ListManager(
             parent,
             style_manager,
@@ -42,6 +45,9 @@ class MessageListManager:
             delete_callback=delete_callback,
             edit_callback=edit_callback
         )
+
+        # Ajustar para layout compacto
+        self.list_manager.list_frame.pack_configure(padx=0, pady=(0, 8))
 
         # Patrón para detectar emoticones
         self.emoji_pattern = self._create_emoji_pattern()
@@ -101,8 +107,8 @@ class MessageListManager:
         text = message.get("texto", "")
         has_image = message.get("imagen") is not None
 
-        # Texto truncado para mejor visualización
-        display_text = self._truncate_text(text, 40)
+        # Texto truncado para mejor visualización en layout compacto
+        display_text = self._truncate_text(text, 35)  # Reducido de 40 a 35
 
         # Agregar indicadores visuales
         indicators = self._get_message_indicators(text, has_image)
@@ -318,13 +324,13 @@ class MessageOperationsHandler:
 
 class MessagesTab:
     """
-    Pestaña principal de gestión de mensajes
-    Coordina todos los componentes para proporcionar funcionalidad completa
+    Pestaña principal de gestión de mensajes con layout horizontal compacto
+    Coordina todos los componentes para proporcionar funcionalidad completa optimizada para 1000x600px
     """
 
     def __init__(self, parent, style_manager: StyleManager, data_manager):
         """
-        Inicializa la pestaña de gestión de mensajes
+        Inicializa la pestaña de gestión de mensajes con layout horizontal
 
         Args:
             parent: Widget padre
@@ -337,8 +343,8 @@ class MessagesTab:
         # Frame principal
         self.frame = style_manager.create_styled_frame(parent)
 
-        # Crear componentes
-        self._create_components()
+        # Crear layout horizontal
+        self._create_horizontal_layout()
 
         # Crear manejador de operaciones
         self._create_operations_handler()
@@ -346,46 +352,75 @@ class MessagesTab:
         # Cargar datos iniciales
         self._load_initial_data()
 
-    def _create_components(self):
+    def _create_horizontal_layout(self):
         """
-        Crea todos los componentes de la pestaña
+        Crea el layout horizontal principal: entrada | lista
         """
-        # Cabecera
-        self._create_header()
+        # Header compacto
+        self._create_compact_header()
 
-        # Sección de entrada
+        # Container principal con layout horizontal
+        main_container = self.style_manager.create_styled_frame(self.frame)
+        main_container.pack(fill=tk.BOTH, expand=True, padx=12, pady=8)
+
+        # Columna izquierda: Entrada de mensajes (40% del ancho)
+        self.left_column = self.style_manager.create_styled_frame(main_container)
+        self.left_column.pack(side=tk.LEFT, fill=tk.BOTH, padx=(0, 8))
+        self.left_column.configure(width=400)  # Ancho fijo para entrada
+        self.left_column.pack_propagate(False)
+
+        # Columna derecha: Lista de mensajes (60% del ancho)
+        self.right_column = self.style_manager.create_styled_frame(main_container)
+        self.right_column.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(8, 0))
+
+        # Crear componentes en cada columna
         self._create_input_section()
-
-        # Lista de mensajes
         self._create_list_section()
 
-    def _create_header(self):
+    def _create_compact_header(self):
         """
-        Crea la cabecera de la pestaña
+        Crea la cabecera compacta de la pestaña
         """
-        TabHeader(
-            self.frame,
-            self.style_manager,
-            "Gestión de Mensajes",
-            "Crea y administra mensajes con texto e imágenes"
+        # Container del header con padding reducido
+        header_container = self.style_manager.create_styled_frame(self.frame)
+        header_container.pack(fill=tk.X, padx=12, pady=(12, 8))
+
+        # Título
+        title_label = self.style_manager.create_styled_label(header_container, "Gestión de Mensajes", "title")
+        title_label.pack(anchor="w")
+
+        # Descripción más concisa
+        desc_label = self.style_manager.create_styled_label(
+            header_container,
+            "Crea y administra mensajes con texto e imágenes",
+            "secondary"
         )
+        desc_label.pack(anchor="w", pady=(4, 0))
+
+        # Línea separadora más sutil
+        separator = self.style_manager.create_styled_frame(header_container, "accent")
+        separator.configure(height=1)
+        separator.pack(fill=tk.X, pady=(8, 0))
 
     def _create_input_section(self):
         """
-        Crea la sección de entrada reutilizando el componente modularizado
+        Crea la sección de entrada en la columna izquierda
         """
         self.input_section = MessageInputSection(
-            self.frame,
+            self.left_column,
             self.style_manager,
             button_callback=self._on_add_message_clicked
         )
 
+        # Ajustar padding para layout compacto
+        self.input_section.input_frame.pack_configure(padx=0, pady=(0, 8))
+
     def _create_list_section(self):
         """
-        Crea la sección de lista de mensajes
+        Crea la sección de lista en la columna derecha
         """
         self.list_manager = MessageListManager(
-            self.frame,
+            self.right_column,
             self.style_manager,
             edit_callback=self._on_edit_message_clicked,
             delete_callback=self._on_delete_message_clicked

@@ -19,7 +19,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.action_chains import ActionChains
-from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException, \
+from selenium.common.exceptions import TimeoutException, \
     ElementClickInterceptedException
 from typing import List, Dict, Any, Callable, Optional
 

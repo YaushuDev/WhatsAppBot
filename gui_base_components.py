@@ -8,7 +8,7 @@ Proporciona la base arquitectónica para el resto de componentes especializados.
 
 import tkinter as tk
 from tkinter import scrolledtext, messagebox, ttk
-from typing import List, Dict, Any, Optional, Callable
+from typing import List
 from gui_styles import StyleManager
 
 
