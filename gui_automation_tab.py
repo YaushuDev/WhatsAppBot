@@ -5,33 +5,41 @@ Este módulo implementa la funcionalidad de control y configuración de la autom
 del bot con layout horizontal compacto, donde los controles están a la izquierda y el
 registro de actividad a la derecha. Incluye configuración de intervalos, estadísticas
 en tiempo real y controles de inicio/detención optimizado para pantallas de 1000x600px.
+ACTUALIZADO: Configuración persistente de intervalos con botón de guardar.
 """
 
 import tkinter as tk
 import threading
 from gui_styles import StyleManager
-from gui_components import (ActivityLog, show_error_message)
+from gui_components import (ActivityLog, show_error_message, show_success_message)
 
 
 class AutomationConfigSection:
     """
-    Sección de configuración de la automatización compacta
+    Sección de configuración de la automatización compacta con persistencia
     Maneja los parámetros de intervalos entre mensajes optimizada para layout horizontal
+    con capacidad de guardar y cargar configuración automáticamente
     """
 
-    def __init__(self, parent, style_manager: StyleManager):
+    def __init__(self, parent, style_manager: StyleManager, data_manager):
         """
-        Inicializa la sección de configuración compacta
+        Inicializa la sección de configuración compacta con persistencia
 
         Args:
             parent: Widget padre donde se mostrará la sección
             style_manager: Gestor de estilos para mantener consistencia visual
+            data_manager: Gestor de datos para cargar/guardar configuración
         """
         self.style_manager = style_manager
+        self.data_manager = data_manager
 
         # Crear frame principal de configuración más compacto
         self._create_compact_config_frame(parent)
         self._create_compact_interval_controls()
+        self._create_save_button()
+
+        # Cargar configuración guardada al inicializar
+        self._load_saved_config()
 
     def _create_compact_config_frame(self, parent):
         """
@@ -70,7 +78,7 @@ class AutomationConfigSection:
         Crea los campos de entrada para intervalos en layout compacto
         """
         inputs_frame = self.style_manager.create_styled_frame(self.content_frame)
-        inputs_frame.pack(fill=tk.X)
+        inputs_frame.pack(fill=tk.X, pady=(0, 8))
 
         # Input mínimo
         self._create_min_interval_input(inputs_frame)
@@ -93,7 +101,7 @@ class AutomationConfigSection:
 
         self.min_interval = self.style_manager.create_styled_entry(min_container)
         self.min_interval.pack(fill=tk.X, pady=(2, 0))  # Espacio reducido
-        self.min_interval.insert(0, "30")
+        self.min_interval.insert(0, "30")  # Valor por defecto
 
     def _create_max_interval_input(self, parent):
         """
@@ -110,7 +118,68 @@ class AutomationConfigSection:
 
         self.max_interval = self.style_manager.create_styled_entry(max_container)
         self.max_interval.pack(fill=tk.X, pady=(2, 0))  # Espacio reducido
-        self.max_interval.insert(0, "60")
+        self.max_interval.insert(0, "60")  # Valor por defecto
+
+    def _create_save_button(self):
+        """
+        Crea el botón para guardar la configuración
+        """
+        save_btn = self.style_manager.create_styled_button(
+            self.content_frame,
+            "💾 Guardar",
+            self._save_config,
+            "accent"
+        )
+        save_btn.configure(pady=6)
+        save_btn.pack(pady=(4, 0))
+
+    def _load_saved_config(self):
+        """
+        Carga la configuración guardada desde el data manager
+        """
+        try:
+            config = self.data_manager.get_config()
+
+            min_interval = config.get("intervalo_min", 30)
+            max_interval = config.get("intervalo_max", 60)
+
+            # Limpiar y establecer valores
+            self.min_interval.delete(0, tk.END)
+            self.min_interval.insert(0, str(min_interval))
+
+            self.max_interval.delete(0, tk.END)
+            self.max_interval.insert(0, str(max_interval))
+
+        except Exception as e:
+            print(f"Error cargando configuración: {e}")
+            # Mantener valores por defecto si hay error
+
+    def _save_config(self):
+        """
+        Guarda la configuración actual usando el data manager
+        """
+        try:
+            # Validar antes de guardar
+            is_valid, error_message = self.validate_intervals()
+            if not is_valid:
+                show_error_message(f"No se puede guardar: {error_message}")
+                return
+
+            # Obtener valores actuales
+            min_val, max_val = self.get_intervals()
+
+            # Obtener configuración actual y actualizar intervalos
+            current_config = self.data_manager.get_config()
+            current_config["intervalo_min"] = min_val
+            current_config["intervalo_max"] = max_val
+
+            # Guardar configuración
+            self.data_manager.save_config(current_config)
+
+            show_success_message("Configuración guardada correctamente")
+
+        except Exception as e:
+            show_error_message(f"Error al guardar configuración: {str(e)}")
 
     def get_intervals(self):
         """
@@ -298,11 +367,12 @@ class AutomationTab:
     """
     Pestaña principal de automatización con layout horizontal compacto
     Coordina la configuración, estadísticas, controles y registro de actividad optimizado para 1000x600px
+    con configuración persistente de intervalos
     """
 
     def __init__(self, parent, style_manager: StyleManager, data_manager, whatsapp_bot, update_stats_callback):
         """
-        Inicializa la pestaña de automatización con layout horizontal
+        Inicializa la pestaña de automatización con layout horizontal y configuración persistente
 
         Args:
             parent: Widget padre donde se mostrará la pestaña
@@ -377,12 +447,13 @@ class AutomationTab:
 
     def _create_left_column_components(self):
         """
-        Crea los componentes de la columna izquierda (controles)
+        Crea los componentes de la columna izquierda (controles) con configuración persistente
         """
-        # Configuración de automatización
+        # Configuración de automatización con persistencia
         self.config_section = AutomationConfigSection(
             self.left_column,
-            self.style_manager
+            self.style_manager,
+            self.data_manager  # Pasar data_manager para persistencia
         )
 
         # Estadísticas compactas
