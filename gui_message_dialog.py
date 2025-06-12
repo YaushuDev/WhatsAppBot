@@ -316,15 +316,11 @@ class MessageEditDialogContent:
         """
         Crea la sección de edición de imagen reutilizando el componente
         """
-        # Label personalizado
-        image_label = self.style_manager.create_styled_label(
-            self.main_frame,
-            "Imagen:",
-            "normal"
-        )
-        image_label.pack(anchor="w", pady=(10, 5))
+        # Agregar espacio superior para separar de la sección de texto
+        spacer = self.style_manager.create_styled_frame(self.main_frame)
+        spacer.pack(pady=(10, 0))
 
-        # Reutilizar componente de imagen
+        # Reutilizar componente de imagen (ya incluye su propio label)
         self.image_component = ImagePreviewComponent(
             self.main_frame,
             self.style_manager
@@ -337,9 +333,12 @@ class MessageEditDialogContent:
         """
         Personaliza los botones de imagen para el contexto de edición
         """
-        # Cambiar texto de los botones
-        self.image_component.select_btn.configure(text="📁 Cambiar imagen")
-        self.image_component.clear_btn.configure(text="🗑️ Quitar imagen")
+        # Cambiar texto de los botones para mayor claridad en el diálogo
+        self.image_component.select_btn.configure(text="📁 Cambiar")
+        self.image_component.clear_btn.configure(
+            text="🗑️ Eliminar",
+            fg=self.style_manager.colors["text_primary"]  # Mantener texto blanco en botón rojo
+        )
 
     def _load_existing_data(self):
         """

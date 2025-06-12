@@ -66,12 +66,12 @@ class ImagePreviewComponent:
         )
         image_label.pack(side=tk.LEFT)
 
-        # Botones de control más compactos
-        self._create_compact_buttons(header_frame)
+        # Botones de control mejorados
+        self._create_improved_buttons(header_frame)
 
-    def _create_compact_buttons(self, parent):
+    def _create_improved_buttons(self, parent):
         """
-        Crea botones más compactos
+        Crea botones mejorados con texto claro
 
         Args:
             parent: Widget padre
@@ -79,24 +79,28 @@ class ImagePreviewComponent:
         buttons_frame = self.style_manager.create_styled_frame(parent)
         buttons_frame.pack(side=tk.RIGHT)
 
-        # Botón seleccionar más pequeño
+        # Botón seleccionar con texto claro
         self.select_btn = self.style_manager.create_styled_button(
             buttons_frame,
-            "📁",
+            "📁 Subir",
             self._select_image,
             "normal"
         )
-        self.select_btn.configure(width=3, pady=6)
+        self.select_btn.configure(pady=6)
         self.select_btn.pack(side=tk.LEFT, padx=(0, 5))
 
-        # Botón quitar más pequeño
+        # Botón quitar con texto claro y color mejorado
         self.clear_btn = self.style_manager.create_styled_button(
             buttons_frame,
-            "🗑️",
+            "🗑️ Quitar",
             self._clear_image,
             "error"
         )
-        self.clear_btn.configure(width=3, pady=6, state="disabled")
+        self.clear_btn.configure(
+            pady=6,
+            state="disabled",
+            fg=self.style_manager.colors["text_primary"]  # Texto blanco en botón rojo
+        )
         self.clear_btn.pack(side=tk.LEFT)
 
     def _create_compact_preview(self):
@@ -141,7 +145,10 @@ class ImagePreviewComponent:
         if self._validate_image(image_path):
             self.selected_image_path = image_path
             self._update_preview()
-            self.clear_btn.configure(state="normal")
+            self.clear_btn.configure(
+                state="normal",
+                fg=self.style_manager.colors["text_primary"]  # Mantener texto blanco
+            )
         else:
             show_validation_error("El archivo seleccionado no es una imagen válida")
 
@@ -151,7 +158,10 @@ class ImagePreviewComponent:
         """
         self.selected_image_path = None
         self._update_preview()
-        self.clear_btn.configure(state="disabled")
+        self.clear_btn.configure(
+            state="disabled",
+            fg=self.style_manager.colors["text_primary"]  # Mantener texto blanco
+        )
 
     def _validate_image(self, image_path):
         """
@@ -275,7 +285,10 @@ class ImagePreviewComponent:
         if image_path and os.path.exists(image_path):
             self.selected_image_path = image_path
             self._update_preview()
-            self.clear_btn.configure(state="normal")
+            self.clear_btn.configure(
+                state="normal",
+                fg=self.style_manager.colors["text_primary"]  # Mantener texto blanco
+            )
         else:
             self._clear_image()
 
