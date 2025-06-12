@@ -4,6 +4,7 @@ Componentes de entrada de mensajes para el Bot de WhatsApp.
 Este módulo implementa los componentes especializados para la creación de mensajes
 con texto, imágenes y emoticones. Proporciona una interfaz compacta e intuitiva para entrada
 de contenido multimedia con validación y vista previa optimizada.
+ACTUALIZADO: Incluye opción para envío conjunto de imagen con texto como caption.
 """
 
 import tkinter as tk
@@ -149,6 +150,10 @@ class ImagePreviewComponent:
                 state="normal",
                 fg=self.style_manager.colors["text_primary"]  # Mantener texto blanco
             )
+
+            # NUEVO: Notificar cambio para actualizar opciones de envío
+            if hasattr(self, '_on_image_change_callback'):
+                self._on_image_change_callback()
         else:
             show_validation_error("El archivo seleccionado no es una imagen válida")
 
@@ -162,6 +167,10 @@ class ImagePreviewComponent:
             state="disabled",
             fg=self.style_manager.colors["text_primary"]  # Mantener texto blanco
         )
+
+        # NUEVO: Notificar cambio para actualizar opciones de envío
+        if hasattr(self, '_on_image_change_callback'):
+            self._on_image_change_callback()
 
     def _validate_image(self, image_path):
         """
@@ -289,6 +298,10 @@ class ImagePreviewComponent:
                 state="normal",
                 fg=self.style_manager.colors["text_primary"]  # Mantener texto blanco
             )
+
+            # NUEVO: Notificar cambio
+            if hasattr(self, '_on_image_change_callback'):
+                self._on_image_change_callback()
         else:
             self._clear_image()
 
@@ -297,6 +310,16 @@ class ImagePreviewComponent:
         Limpia la imagen seleccionada
         """
         self._clear_image()
+
+    # NUEVO: Método para registrar callback de cambio
+    def set_on_image_change_callback(self, callback):
+        """
+        Establece callback para notificar cambios en la imagen
+
+        Args:
+            callback: Función a llamar cuando cambie la imagen
+        """
+        self._on_image_change_callback = callback
 
 
 class TextInputComponent:
@@ -353,6 +376,10 @@ class TextInputComponent:
         )
         self.text_widget.pack(fill=tk.X, pady=(5, 8))  # Menos espacio vertical
 
+        # NUEVO: Bind para detectar cambios de texto
+        self.text_widget.bind('<KeyRelease>', self._on_text_change)
+        self.text_widget.bind('<ButtonRelease-1>', self._on_text_change)
+
     def _create_clean_emoji_menu(self, parent):
         """
         Crea el menú de emoticones limpio (sin emoticones rápidos)
@@ -380,8 +407,22 @@ class TextInputComponent:
             # Mantener el foco en el área de texto
             self.text_widget.focus_set()
 
+            # NUEVO: Notificar cambio de texto
+            self._on_text_change()
+
         except Exception as e:
             print(f"Error insertando emoji: {e}")
+
+    def _on_text_change(self, event=None):
+        """
+        Maneja los cambios en el texto para actualizar opciones de envío
+
+        Args:
+            event: Evento de cambio (opcional)
+        """
+        # NUEVO: Notificar cambio para actualizar opciones de envío
+        if hasattr(self, '_on_text_change_callback'):
+            self._on_text_change_callback()
 
     def get_text(self):
         """
@@ -402,11 +443,17 @@ class TextInputComponent:
         self.clear_text()
         self.text_widget.insert(1.0, text)
 
+        # NUEVO: Notificar cambio
+        self._on_text_change()
+
     def clear_text(self):
         """
         Limpia el texto del área de entrada
         """
         self.text_widget.delete(1.0, tk.END)
+
+        # NUEVO: Notificar cambio
+        self._on_text_change()
 
     def focus(self):
         """
@@ -422,6 +469,16 @@ class TextInputComponent:
             bool: True si está vacía
         """
         return len(self.get_text()) == 0
+
+    # NUEVO: Método para registrar callback de cambio
+    def set_on_text_change_callback(self, callback):
+        """
+        Establece callback para notificar cambios en el texto
+
+        Args:
+            callback: Función a llamar cuando cambie el texto
+        """
+        self._on_text_change_callback = callback
 
 
 class CleanEmojiMenu:
@@ -552,10 +609,139 @@ class CleanEmojiMenu:
             self.insert_callback(emoji)
 
 
+class SendModeSelector:
+    """
+    NUEVO: Componente para seleccionar modo de envío (conjunto/separado)
+    Solo visible cuando hay imagen Y texto
+    """
+
+    def __init__(self, parent, style_manager: StyleManager):
+        """
+        Inicializa el selector de modo de envío
+
+        Args:
+            parent: Widget padre
+            style_manager: Gestor de estilos
+        """
+        self.style_manager = style_manager
+        self.envio_conjunto = tk.BooleanVar(value=False)  # Por defecto separado
+
+        # Crear interfaz (inicialmente oculta)
+        self._create_selector_interface(parent)
+        self._hide_selector()
+
+    def _create_selector_interface(self, parent):
+        """
+        Crea la interfaz del selector de modo de envío
+
+        Args:
+            parent: Widget padre
+        """
+        # Frame principal
+        self.selector_frame = self.style_manager.create_styled_frame(parent)
+        self.selector_frame.pack(fill=tk.X, pady=(0, 8))
+
+        # Container interno con estilo de tarjeta
+        container = self.style_manager.create_styled_frame(self.selector_frame, "card")
+        container.configure(relief="solid", bd=1)
+        container.pack(fill=tk.X, padx=5, pady=5)
+
+        # Título explicativo
+        title_label = self.style_manager.create_styled_label(
+            container,
+            "📤 Modo de envío:",
+            "small"
+        )
+        title_label.configure(bg=self.style_manager.colors["bg_card"])
+        title_label.pack(anchor="w", padx=8, pady=(8, 4))
+
+        # Opciones de envío
+        options_frame = self.style_manager.create_styled_frame(container, "card")
+        options_frame.pack(fill=tk.X, padx=8, pady=(0, 8))
+
+        # Opción 1: Envío separado (por defecto)
+        separated_radio = tk.Radiobutton(
+            options_frame,
+            text="📷+📝 Separado (imagen primero, luego texto)",
+            variable=self.envio_conjunto,
+            value=False,
+            font=self.style_manager.fonts["small"],
+            bg=self.style_manager.colors["bg_card"],
+            fg=self.style_manager.colors["text_primary"],
+            selectcolor=self.style_manager.colors["bg_accent"],
+            activebackground=self.style_manager.colors["bg_card"],
+            activeforeground=self.style_manager.colors["text_primary"],
+            border=0,
+            highlightthickness=0
+        )
+        separated_radio.pack(anchor="w", pady=(0, 4))
+
+        # Opción 2: Envío conjunto
+        together_radio = tk.Radiobutton(
+            options_frame,
+            text="🖼️📝 Conjunto (imagen con texto como caption)",
+            variable=self.envio_conjunto,
+            value=True,
+            font=self.style_manager.fonts["small"],
+            bg=self.style_manager.colors["bg_card"],
+            fg=self.style_manager.colors["text_primary"],
+            selectcolor=self.style_manager.colors["bg_accent"],
+            activebackground=self.style_manager.colors["bg_card"],
+            activeforeground=self.style_manager.colors["text_primary"],
+            border=0,
+            highlightthickness=0
+        )
+        together_radio.pack(anchor="w")
+
+    def _show_selector(self):
+        """
+        Muestra el selector de modo de envío
+        """
+        self.selector_frame.pack(fill=tk.X, pady=(0, 8))
+
+    def _hide_selector(self):
+        """
+        Oculta el selector de modo de envío
+        """
+        self.selector_frame.pack_forget()
+
+    def update_visibility(self, has_text, has_image):
+        """
+        Actualiza la visibilidad del selector según el contenido
+
+        Args:
+            has_text: Si hay texto
+            has_image: Si hay imagen
+        """
+        if has_text and has_image:
+            self._show_selector()
+        else:
+            self._hide_selector()
+
+    def get_envio_conjunto(self):
+        """
+        Obtiene el estado del envío conjunto
+
+        Returns:
+            bool: True si debe enviar junto, False si separado
+        """
+        return self.envio_conjunto.get()
+
+    def set_envio_conjunto(self, value):
+        """
+        Establece el estado del envío conjunto
+
+        Args:
+            value: True para envío conjunto, False para separado
+        """
+        self.envio_conjunto.set(value)
+
+
 class MessageInputSection:
     """
     Sección compacta y reorganizada de entrada de mensajes
     Optimizada para usar el espacio de manera más eficiente
+    ACTUALIZADO: Incluye selector de modo de envío conjunto/separado
     """
 
     def __init__(self, parent, style_manager: StyleManager, button_callback=None):
@@ -576,9 +762,15 @@ class MessageInputSection:
         # Crear componentes optimizados
         self._create_optimized_components()
 
+        # NUEVO: Crear selector de modo de envío
+        self._create_send_mode_selector()
+
         # Crear botón de acción
         if button_callback:
             self._create_compact_button()
+
+        # NUEVO: Configurar callbacks para actualizar visibilidad
+        self._setup_content_change_callbacks()
 
     def _create_compact_frame(self, parent):
         """
@@ -613,6 +805,37 @@ class MessageInputSection:
             self.style_manager
         )
 
+    def _create_send_mode_selector(self):
+        """
+        NUEVO: Crea el selector de modo de envío
+        """
+        self.send_mode_selector = SendModeSelector(
+            self.content_frame,
+            self.style_manager
+        )
+
+    def _setup_content_change_callbacks(self):
+        """
+        NUEVO: Configura callbacks para detectar cambios en contenido
+        """
+        # Callback para cambios en texto
+        self.text_component.set_on_text_change_callback(self._update_send_mode_visibility)
+
+        # Callback para cambios en imagen
+        self.image_component.set_on_image_change_callback(self._update_send_mode_visibility)
+
+        # Actualizar visibilidad inicial
+        self._update_send_mode_visibility()
+
+    def _update_send_mode_visibility(self):
+        """
+        NUEVO: Actualiza la visibilidad del selector de modo de envío
+        """
+        has_text = not self.text_component.is_empty()
+        has_image = self.image_component.get_image_path() is not None
+
+        self.send_mode_selector.update_visibility(has_text, has_image)
+
     def _create_compact_button(self):
         """
         Crea el botón de agregar más compacto
@@ -638,14 +861,15 @@ class MessageInputSection:
 
     def get_values(self):
         """
-        Obtiene los valores actuales de texto e imagen
+        Obtiene los valores actuales de texto, imagen y modo de envío
 
         Returns:
-            tuple: (texto, ruta_imagen)
+            tuple: (texto, ruta_imagen, envio_conjunto)
         """
         text = self.text_component.get_text()
         image_path = self.image_component.get_image_path()
-        return text, image_path
+        envio_conjunto = self.send_mode_selector.get_envio_conjunto()
+        return text, image_path, envio_conjunto
 
     def clear_values(self):
         """
@@ -653,17 +877,21 @@ class MessageInputSection:
         """
         self.text_component.clear_text()
         self.image_component.clear()
+        # Resetear a modo separado por defecto
+        self.send_mode_selector.set_envio_conjunto(False)
 
-    def set_values(self, text, image_path=None):
+    def set_values(self, text, image_path=None, envio_conjunto=False):
         """
         Establece valores en los campos
 
         Args:
             text: Texto del mensaje
             image_path: Ruta de la imagen (opcional)
+            envio_conjunto: Modo de envío conjunto
         """
         self.text_component.set_text(text)
         self.image_component.set_image_path(image_path)
+        self.send_mode_selector.set_envio_conjunto(envio_conjunto)
 
     def focus_text(self):
         """

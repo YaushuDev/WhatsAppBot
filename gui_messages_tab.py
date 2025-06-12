@@ -5,6 +5,7 @@ Este módulo coordina los componentes de entrada y edición de mensajes con layo
 compacto donde la creación está a la izquierda y la lista a la derecha. Proporciona una
 interfaz unificada para la gestión completa de mensajes con texto, imágenes y emoticones
 optimizada para pantallas de 1000x600px.
+ACTUALIZADO: Soporte para envío conjunto de imagen con texto como caption y indicadores visuales mejorados.
 """
 
 import re
@@ -21,6 +22,7 @@ class MessageListManager:
     Gestor especializado para la lista de mensajes con indicadores visuales
     Se encarga de formatear y mostrar mensajes con iconos informativos
     Optimizado para layout horizontal compacto
+    ACTUALIZADO: Indicadores visuales para envío conjunto/separado
     """
 
     def __init__(self, parent, style_manager: StyleManager, edit_callback=None, delete_callback=None):
@@ -80,7 +82,7 @@ class MessageListManager:
 
     def update_messages_list(self, messages):
         """
-        Actualiza la lista de mensajes con indicadores visuales
+        Actualiza la lista de mensajes con indicadores visuales mejorados
 
         Args:
             messages: Lista de mensajes del data manager
@@ -95,7 +97,7 @@ class MessageListManager:
 
     def _create_message_display_text(self, message, index):
         """
-        Crea el texto de visualización para un mensaje
+        Crea el texto de visualización para un mensaje con indicadores mejorados
 
         Args:
             message: Datos del mensaje
@@ -106,12 +108,13 @@ class MessageListManager:
         """
         text = message.get("texto", "")
         has_image = message.get("imagen") is not None
+        envio_conjunto = message.get("envio_conjunto", False)
 
         # Texto truncado para mejor visualización en layout compacto
         display_text = self._truncate_text(text, 35)  # Reducido de 40 a 35
 
-        # Agregar indicadores visuales
-        indicators = self._get_message_indicators(text, has_image)
+        # NUEVO: Agregar indicadores visuales mejorados
+        indicators = self._get_enhanced_message_indicators(text, has_image, envio_conjunto)
 
         # Formato: "número. texto + indicadores"
         return f"{index + 1}. {display_text}{indicators}"
@@ -131,22 +134,31 @@ class MessageListManager:
             return text
         return text[:max_length] + "..."
 
-    def _get_message_indicators(self, text, has_image):
+    def _get_enhanced_message_indicators(self, text, has_image, envio_conjunto):
         """
-        Obtiene los indicadores visuales para un mensaje
+        Obtiene los indicadores visuales mejorados para un mensaje
 
         Args:
             text: Texto del mensaje
             has_image: Si el mensaje tiene imagen
+            envio_conjunto: Si usa envío conjunto
 
         Returns:
             str: Indicadores concatenados
         """
         indicators = ""
 
-        if has_image:
-            indicators += " 📷"
+        # NUEVO: Indicadores visuales específicos para modo de envío
+        if has_image and text:
+            if envio_conjunto:
+                indicators += " 🖼️📝"  # Imagen con caption (envío conjunto)
+            else:
+                indicators += " 📷+📝"  # Imagen y texto separados
+        elif has_image:
+            indicators += " 📷"  # Solo imagen
+        # Si solo hay texto, no agregar indicador de imagen
 
+        # Indicador de emoticones
         if self._has_emojis(text):
             indicators += " 😀"
 
@@ -178,6 +190,7 @@ class MessageOperationsHandler:
     """
     Manejador especializado para operaciones CRUD de mensajes
     Centraliza la lógica de negocio para agregar, editar y eliminar mensajes
+    ACTUALIZADO: Soporte para envío conjunto de imagen con texto
     """
 
     def __init__(self, data_manager, input_section, list_manager):
@@ -195,7 +208,7 @@ class MessageOperationsHandler:
 
     def add_message(self):
         """
-        Agrega un nuevo mensaje al sistema
+        Agrega un nuevo mensaje al sistema con soporte para envío conjunto
         """
         # Validar entrada
         is_valid, error_message = self.input_section.validate_input()
@@ -204,21 +217,22 @@ class MessageOperationsHandler:
             self.input_section.focus_text()
             return
 
-        # Obtener datos
-        text, image_path = self.input_section.get_values()
+        # NUEVO: Obtener datos incluyendo modo de envío
+        text, image_path, envio_conjunto = self.input_section.get_values()
 
-        # Intentar agregar mensaje
-        if self.data_manager.add_message(text, image_path):
-            self._on_message_added_successfully(image_path)
+        # Intentar agregar mensaje con nuevo parámetro
+        if self.data_manager.add_message(text, image_path, envio_conjunto):
+            self._on_message_added_successfully(image_path, envio_conjunto)
         else:
             show_error_message("Error al agregar el mensaje")
 
-    def _on_message_added_successfully(self, image_path):
+    def _on_message_added_successfully(self, image_path, envio_conjunto):
         """
-        Maneja el flujo exitoso de adición de mensaje
+        Maneja el flujo exitoso de adición de mensaje con indicadores mejorados
 
         Args:
             image_path: Ruta de imagen (si existe)
+            envio_conjunto: Si usa envío conjunto
         """
         # Limpiar formulario
         self.input_section.clear_values()
@@ -227,9 +241,12 @@ class MessageOperationsHandler:
         # Actualizar lista
         self._refresh_messages_list()
 
-        # Mostrar mensaje apropiado
+        # NUEVO: Mostrar mensaje apropiado según el modo de envío
         if image_path:
-            show_success_message("Mensaje con imagen agregado correctamente")
+            if envio_conjunto:
+                show_success_message("Mensaje con imagen como caption agregado correctamente")
+            else:
+                show_success_message("Mensaje con imagen (envío separado) agregado correctamente")
         else:
             show_success_message("Mensaje agregado correctamente")
 
@@ -264,14 +281,26 @@ class MessageOperationsHandler:
 
         def on_edit_complete(new_data):
             if new_data:
+                # NUEVO: Pasar el parámetro envio_conjunto actualizado
                 success = self.data_manager.update_message(
                     index,
                     new_data['texto'],
-                    new_data.get('nueva_imagen')
+                    new_data.get('nueva_imagen'),
+                    new_data.get('envio_conjunto')
                 )
                 if success:
                     self._refresh_messages_list()
-                    show_success_message("Mensaje actualizado correctamente")
+
+                    # NUEVO: Mensaje específico según modo de envío
+                    envio_conjunto = new_data.get('envio_conjunto', False)
+                    has_image = new_data.get('nueva_imagen') is not None or message_data.get('imagen') is not None
+
+                    if has_image and envio_conjunto:
+                        show_success_message("Mensaje actualizado (modo conjunto: imagen con caption)")
+                    elif has_image:
+                        show_success_message("Mensaje actualizado (modo separado: imagen y texto)")
+                    else:
+                        show_success_message("Mensaje actualizado correctamente")
                 else:
                     show_error_message("Error al actualizar el mensaje")
 
@@ -296,9 +325,24 @@ class MessageOperationsHandler:
             show_validation_error("Por favor selecciona un mensaje para eliminar")
             return
 
+        # NUEVO: Mejorar mensaje de confirmación con información del tipo
+        message_data = self.data_manager.get_message_by_index(index)
+        confirmation_text = "¿Eliminar el mensaje seleccionado?"
+
+        if message_data:
+            has_image = message_data.get('imagen') is not None
+            envio_conjunto = message_data.get('envio_conjunto', False)
+
+            if has_image:
+                if envio_conjunto:
+                    confirmation_text += "\n\n📷📝 Incluye imagen con caption que también se eliminará."
+                else:
+                    confirmation_text += "\n\n📷+📝 Incluye imagen que también se eliminará."
+            else:
+                confirmation_text += "\n\n📝 Solo contiene texto."
+
         # Confirmar eliminación
-        if show_confirmation_dialog(
-                "¿Eliminar el mensaje seleccionado?\n\nSi tiene imagen asociada, también se eliminará."):
+        if show_confirmation_dialog(confirmation_text):
             self._perform_message_deletion(index)
 
     def _perform_message_deletion(self, index):
@@ -326,6 +370,7 @@ class MessagesTab:
     """
     Pestaña principal de gestión de mensajes con layout horizontal compacto
     Coordina todos los componentes para proporcionar funcionalidad completa optimizada para 1000x600px
+    ACTUALIZADO: Soporte completo para envío conjunto de imagen con texto como caption
     """
 
     def __init__(self, parent, style_manager: StyleManager, data_manager):
@@ -379,7 +424,7 @@ class MessagesTab:
 
     def _create_compact_header(self):
         """
-        Crea la cabecera compacta de la pestaña
+        Crea la cabecera compacta de la pestaña con información del envío conjunto
         """
         # Container del header con padding reducido
         header_container = self.style_manager.create_styled_frame(self.frame)
@@ -482,3 +527,42 @@ class MessagesTab:
         Actualiza los datos mostrados
         """
         self._refresh_messages()
+
+    def get_statistics(self):
+        """
+        NUEVO: Obtiene estadísticas detalladas de los mensajes
+
+        Returns:
+            dict: Estadísticas de los mensajes
+        """
+        messages = self.data_manager.get_messages()
+
+        stats = {
+            'total': len(messages),
+            'solo_texto': 0,
+            'solo_imagen': 0,
+            'texto_imagen_separado': 0,
+            'texto_imagen_conjunto': 0,
+            'con_emoticones': 0
+        }
+
+        for message in messages:
+            text = message.get('texto', '')
+            has_image = message.get('imagen') is not None
+            envio_conjunto = message.get('envio_conjunto', False)
+            has_emojis = bool(self.list_manager.emoji_pattern.search(text)) if text else False
+
+            if has_emojis:
+                stats['con_emoticones'] += 1
+
+            if has_image and text:
+                if envio_conjunto:
+                    stats['texto_imagen_conjunto'] += 1
+                else:
+                    stats['texto_imagen_separado'] += 1
+            elif has_image:
+                stats['solo_imagen'] += 1
+            elif text:
+                stats['solo_texto'] += 1
+
+        return stats

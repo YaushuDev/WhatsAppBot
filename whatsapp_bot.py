@@ -6,6 +6,7 @@ Incluye soporte robusto para emoticones y caracteres Unicode mediante JavaScript
 solucionando las limitaciones de ChromeDriver con caracteres fuera del BMP.
 Optimizado para velocidad: envío de texto ~10s, envío con imagen ~20-25s máximo.
 NUEVO: Sistema de envío secuencial que recorre los mensajes en orden cíclico.
+ACTUALIZADO: Soporte para envío conjunto de imagen con texto como caption en un solo mensaje.
 """
 
 import time
@@ -29,6 +30,7 @@ class WhatsAppBot:
     """
     Bot automatizado para WhatsApp Web con soporte completo para emoticones y caracteres Unicode
     Optimizado para velocidad y eficiencia en el envío de mensajes con sistema secuencial
+    Incluye envío conjunto de imagen con texto como caption
     """
 
     def __init__(self, status_callback: Optional[Callable] = None):
@@ -625,6 +627,177 @@ class WhatsAppBot:
             self._validated_images[image_path] = False
             return False
 
+    def _send_image_with_caption_optimized(self, image_path: str, caption_text: str) -> bool:
+        """
+        Envía una imagen con texto como caption en un solo mensaje usando XPaths específicos
+
+        Args:
+            image_path: Ruta de la imagen
+            caption_text: Texto del caption
+
+        Returns:
+            True si se envió correctamente
+        """
+        try:
+            self._update_status(f"🖼️📝 Enviando imagen con caption: {os.path.basename(image_path)}")
+
+            # Selectores optimizados para botón adjuntar
+            attach_selectors = [
+                "div[title='Adjuntar']",
+                "button[aria-label='Adjuntar']",
+                "span[data-icon='plus']",
+                "span[data-icon='attach-menu-plus']",
+                "[data-testid='clip']"
+            ]
+
+            attach_button = self._wait_for_element_optimized(attach_selectors, timeout=8, clickable=True)
+            if not attach_button:
+                self._update_status("❌ No se encontró el botón adjuntar")
+                return False
+
+            if not self._safe_click_optimized(attach_button):
+                return False
+
+            time.sleep(1)  # Reducido de 2
+
+            # Selectores optimizados para input de archivo
+            file_input_selectors = [
+                "input[accept*='image']",
+                "input[type='file'][accept*='image']",
+                "input[type='file']",
+                "li[data-testid='mi-attach-image'] input"
+            ]
+
+            # Buscar input directamente primero
+            file_input = self._wait_for_element_optimized(file_input_selectors, timeout=5)
+
+            if not file_input:
+                # Buscar opción de fotos
+                photos_option_selectors = [
+                    "li[data-testid='mi-attach-image']",
+                    "span:contains('Fotos y videos')",
+                    "div[role='button'][title*='foto']"
+                ]
+
+                photos_option = self._wait_for_element_optimized(photos_option_selectors, timeout=5, clickable=True)
+                if photos_option and self._safe_click_optimized(photos_option):
+                    time.sleep(1)  # Reducido de 2
+                    file_input = self._wait_for_element_optimized(file_input_selectors, timeout=5)
+
+            if not file_input:
+                self._update_status("❌ No se encontró el input de archivo")
+                return False
+
+            # Enviar archivo
+            absolute_path = os.path.abspath(image_path)
+            self._update_status(f"📎 Cargando imagen...")
+            file_input.send_keys(absolute_path)
+            time.sleep(3)  # Reducido de 6
+
+            # NUEVO: Escribir caption usando XPaths específicos
+            self._update_status("📝 Escribiendo caption...")
+
+            # XPaths proporcionados por el usuario para el área de caption
+            caption_selectors = [
+                "//*[@id='app']/div/div[3]/div/div[2]/div[2]/span/div/div/div/div[2]/div/div[1]/div[3]/div/div/div[2]/div[1]/div[1]/p",
+                "//*[@id='app']/div/div[3]/div/div[2]/div[2]/span/div/div/div/div[2]/div/div[1]/div[3]/div/div/div[2]",
+                "div[contenteditable='true'][data-tab='10']",  # Fallback
+                "div[role='textbox'][title*='mensaje']"  # Fallback adicional
+            ]
+
+            caption_box = self._wait_for_element_optimized(caption_selectors, timeout=8, clickable=True)
+            if caption_box:
+                if not self._safe_click_optimized(caption_box):
+                    self._update_status("⚠️ No se pudo hacer click en caption, continuando...")
+                else:
+                    time.sleep(0.5)
+
+                    # Usar JavaScript para escribir el caption con soporte de emoticones
+                    if self._has_emoji_or_unicode(caption_text):
+                        self._update_status("😀 Caption con emoticones detectado...")
+                        escaped_caption = self._escape_unicode_for_js(caption_text)
+
+                        js_script = f"""
+                        try {{
+                            const captionBox = document.evaluate(
+                                "//*[@id='app']/div/div[3]/div/div[2]/div[2]/span/div/div/div/div[2]/div/div[1]/div[3]/div/div/div[2]/div[1]/div[1]/p",
+                                document,
+                                null,
+                                XPathResult.FIRST_ORDERED_NODE_TYPE,
+                                null
+                            ).singleNodeValue ||
+                            document.evaluate(
+                                "//*[@id='app']/div/div[3]/div/div[2]/div[2]/span/div/div/div/div[2]/div/div[1]/div[3]/div/div/div[2]",
+                                document,
+                                null,
+                                XPathResult.FIRST_ORDERED_NODE_TYPE,
+                                null
+                            ).singleNodeValue ||
+                            document.querySelector('[contenteditable="true"][data-tab="10"]');
+
+                            if (captionBox) {{
+                                captionBox.focus();
+                                captionBox.innerHTML = '';
+
+                                const textToSend = "{escaped_caption}";
+                                const textNode = document.createTextNode(textToSend);
+                                captionBox.appendChild(textNode);
+
+                                const inputEvent = new InputEvent('input', {{
+                                    bubbles: true,
+                                    cancelable: true,
+                                    data: textToSend
+                                }});
+                                captionBox.dispatchEvent(inputEvent);
+                                return true;
+                            }}
+                            return false;
+                        }} catch (error) {{
+                            console.log("Error caption:", error);
+                            return false;
+                        }}
+                        """
+
+                        caption_result = self.driver.execute_script(js_script)
+                        if not caption_result:
+                            # Fallback: escribir directamente
+                            caption_box.clear()
+                            caption_box.send_keys(self._filter_bmp_characters(caption_text))
+                    else:
+                        # Texto simple
+                        caption_box.clear()
+                        caption_box.send_keys(caption_text)
+
+                    time.sleep(1)
+            else:
+                self._update_status("⚠️ No se encontró área de caption, enviando solo imagen...")
+
+            # Enviar imagen con caption
+            send_selectors = [
+                "span[data-icon='send']",
+                "button[aria-label='Enviar']",
+                "div[role='button'][aria-label='Enviar']",
+                "[data-testid='send']"
+            ]
+
+            send_button = self._wait_for_element_optimized(send_selectors, timeout=10, clickable=True)
+            if not send_button:
+                self._update_status("❌ No se encontró el botón de enviar")
+                return False
+
+            if not self._safe_click_optimized(send_button):
+                self._update_status("❌ No se pudo hacer click en enviar")
+                return False
+
+            time.sleep(2.5)  # Reducido de 5
+
+            self._update_status("✅ Imagen con caption enviada correctamente")
+            return True
+
+        except Exception as e:
+            self._update_status(f"❌ Error al enviar imagen con caption: {str(e)}")
+            return False
+
     def _send_image_only_optimized(self, image_path: str) -> bool:
         """
         Envía solo una imagen sin texto (optimizado)
@@ -719,10 +892,10 @@ class WhatsAppBot:
 
     def _send_message_optimized(self, message_data: Dict[str, Any]) -> bool:
         """
-        Envía un mensaje (texto y/o imagen) con estrategia optimizada
+        Envía un mensaje (texto y/o imagen) con estrategia optimizada y soporte para envío conjunto
 
         Args:
-            message_data: Datos del mensaje con 'texto' e 'imagen' opcional
+            message_data: Datos del mensaje con 'texto', 'imagen' y 'envio_conjunto'
 
         Returns:
             True si se envió correctamente
@@ -738,9 +911,10 @@ class WhatsAppBot:
 
             text = message_data.get('texto', '').strip()
             image_filename = message_data.get('imagen')
+            envio_conjunto = message_data.get('envio_conjunto', False)
 
-            # Si hay imagen y texto, enviar por separado pero optimizado
-            if image_filename and text:
+            # NUEVO: Si hay imagen y texto con envío conjunto habilitado
+            if image_filename and text and envio_conjunto:
                 image_path = os.path.join("imagenes_mensajes", image_filename)
 
                 if not os.path.exists(image_path):
@@ -752,7 +926,24 @@ class WhatsAppBot:
                     self._update_status("📝 Imagen no válida, enviando solo el texto...")
                     return self._send_text_message_optimized(text)
 
-                # Estrategia optimizada: Imagen primero, luego texto
+                # Envío conjunto usando el método nuevo
+                self._update_status("📤 Enviando imagen con caption (modo conjunto)...")
+                return self._send_image_with_caption_optimized(image_path, text)
+
+            # Si hay imagen y texto pero envío separado (comportamiento original)
+            elif image_filename and text and not envio_conjunto:
+                image_path = os.path.join("imagenes_mensajes", image_filename)
+
+                if not os.path.exists(image_path):
+                    self._update_status(f"⚠️ Imagen no encontrada: {image_path}")
+                    self._update_status("📝 Enviando solo el texto...")
+                    return self._send_text_message_optimized(text)
+
+                if not self._validate_image_file_cached(image_path):
+                    self._update_status("📝 Imagen no válida, enviando solo el texto...")
+                    return self._send_text_message_optimized(text)
+
+                # Estrategia optimizada original: Imagen primero, luego texto
                 self._update_status("📤 Enviando imagen y texto por separado...")
 
                 # 1. Enviar imagen
@@ -770,7 +961,7 @@ class WhatsAppBot:
                     self._update_status("⚠️ Imagen enviada pero falló el texto")
                     return True  # Al menos la imagen se envió
 
-                self._update_status("✅ Imagen y texto enviados correctamente")
+                self._update_status("✅ Imagen y texto enviados correctamente (separados)")
                 return True
 
             # Si solo hay imagen
@@ -864,10 +1055,11 @@ class WhatsAppBot:
         """
         Inicia la automatización del envío de mensajes con sistema secuencial
         NUEVO: Los mensajes se envían en orden secuencial/cíclico
+        ACTUALIZADO: Soporte para envío conjunto de imagen con texto
 
         Args:
             phone_numbers: Lista de números de teléfono
-            messages: Lista de mensajes con formato {'texto': str, 'imagen': str}
+            messages: Lista de mensajes con formato {'texto': str, 'imagen': str, 'envio_conjunto': bool}
             min_interval: Intervalo mínimo entre mensajes (segundos)
             max_interval: Intervalo máximo entre mensajes (segundos)
         """
@@ -887,7 +1079,7 @@ class WhatsAppBot:
             if hasattr(self, '_validated_images'):
                 delattr(self, '_validated_images')
 
-            self._update_status("🚀 Iniciando automatización con envío secuencial...")
+            self._update_status("🚀 Iniciando automatización con envío secuencial y soporte conjunto...")
 
             if not self._initialize_driver():
                 self.is_running = False
@@ -937,9 +1129,18 @@ class WhatsAppBot:
                         selected_message.get('texto', '')) > 50 else selected_message.get('texto', '')
                     has_image = selected_message.get('imagen') is not None
                     has_emoji = self._has_emoji_or_unicode(selected_message.get('texto', ''))
+                    envio_conjunto = selected_message.get('envio_conjunto', False)
 
                     emoji_indicator = " 😀" if has_emoji else ""
-                    image_indicator = " 📷" if has_image else ""
+
+                    # NUEVO: Indicadores visuales mejorados para envío conjunto
+                    if has_image and envio_conjunto:
+                        image_indicator = " 🖼️📝"  # Imagen con caption
+                    elif has_image:
+                        image_indicator = " 📷+📝" if selected_message.get('texto') else " 📷"  # Imagen separada
+                    else:
+                        image_indicator = ""
+
                     message_info = f"'{message_text}'{emoji_indicator}{image_indicator}"
 
                     # NUEVO: Mostrar información del patrón secuencial

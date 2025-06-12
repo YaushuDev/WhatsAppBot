@@ -3,7 +3,8 @@
 Gestor de datos para el Bot de WhatsApp
 Maneja la persistencia y gestión de contactos (nombre y número) y mensajes con soporte
 para texto e imágenes utilizando archivos JSON para almacenar la información localmente.
-Incluye compatibilidad con formatos anteriores y migración automática de datos.
+Incluye compatibilidad con formatos anteriores, migración automática de datos y nueva
+funcionalidad para envío conjunto de imagen con texto como caption.
 """
 
 import json
@@ -15,7 +16,7 @@ from typing import List, Dict, Any, Tuple, Optional
 class DataManager:
     """
     Clase para gestionar la persistencia de datos del bot
-    Maneja contactos con nombre y número, y mensajes con texto e imágenes opcionales
+    Maneja contactos con nombre y número, y mensajes con texto, imágenes y opciones de envío
     """
 
     def __init__(self):
@@ -96,27 +97,37 @@ class DataManager:
 
     def _migrate_messages_format(self):
         """
-        Migra el formato antiguo de mensajes (solo texto) al nuevo formato (texto + imagen opcional)
+        Migra el formato de mensajes a la estructura más reciente con soporte para envío conjunto
         """
         try:
             data = self._load_json(self.messages_file)
             messages = data.get("mensajes", [])
             migrated = False
 
-            # Verificar si hay mensajes en formato antiguo (solo strings)
+            # Verificar si hay mensajes en formato antiguo y migrarlos
             for i, message in enumerate(messages):
+                # Formato muy antiguo (solo strings)
                 if isinstance(message, str):
-                    # Convertir a nuevo formato
                     messages[i] = {
                         "texto": message,
-                        "imagen": None
+                        "imagen": None,
+                        "envio_conjunto": False  # Mantener comportamiento actual por defecto
+                    }
+                    migrated = True
+
+                # Formato intermedio (texto + imagen, sin envio_conjunto)
+                elif isinstance(message, dict) and "envio_conjunto" not in message:
+                    messages[i] = {
+                        "texto": message.get("texto", ""),
+                        "imagen": message.get("imagen", None),
+                        "envio_conjunto": False  # Mantener comportamiento actual por defecto
                     }
                     migrated = True
 
             # Guardar si se hizo alguna migración
             if migrated:
                 self._save_json(self.messages_file, {"mensajes": messages})
-                print("Mensajes migrados al nuevo formato con soporte para imágenes")
+                print("Mensajes migrados al formato con soporte para envío conjunto")
 
         except Exception as e:
             print(f"Error en migración de mensajes: {e}")
@@ -452,13 +463,13 @@ class DataManager:
                 return self.remove_contact(i)
         return False
 
-    # Gestión de mensajes (actualizada para soporte de imágenes)
+    # Gestión de mensajes (actualizada para soporte de envío conjunto)
     def get_messages(self) -> List[Dict[str, Any]]:
         """
-        Obtiene la lista de mensajes guardados con formato nuevo
+        Obtiene la lista de mensajes guardados con formato completo
 
         Returns:
-            Lista de diccionarios con 'texto' e 'imagen' (opcional)
+            Lista de diccionarios con 'texto', 'imagen' y 'envio_conjunto'
         """
         data = self._load_json(self.messages_file)
         messages = data.get("mensajes", [])
@@ -467,16 +478,18 @@ class DataManager:
         formatted_messages = []
         for message in messages:
             if isinstance(message, str):
-                # Formato antiguo - convertir
+                # Formato muy antiguo - convertir
                 formatted_messages.append({
                     "texto": message,
-                    "imagen": None
+                    "imagen": None,
+                    "envio_conjunto": False
                 })
-            elif isinstance(message, dict) and "texto" in message:
-                # Formato nuevo - validar
+            elif isinstance(message, dict):
+                # Asegurar que tenga todos los campos
                 formatted_messages.append({
                     "texto": message.get("texto", ""),
-                    "imagen": message.get("imagen", None)
+                    "imagen": message.get("imagen", None),
+                    "envio_conjunto": message.get("envio_conjunto", False)
                 })
 
         return formatted_messages
@@ -491,13 +504,14 @@ class DataManager:
         messages = self.get_messages()
         return [msg.get("texto", "") for msg in messages]
 
-    def add_message(self, text: str, image_path: str = None) -> bool:
+    def add_message(self, text: str, image_path: str = None, envio_conjunto: bool = False) -> bool:
         """
-        Agrega un mensaje con texto e imagen opcional
+        Agrega un mensaje con texto, imagen opcional y configuración de envío
 
         Args:
             text: Texto del mensaje
             image_path: Ruta de la imagen (opcional)
+            envio_conjunto: Si debe enviar imagen y texto juntos como caption
 
         Returns:
             True si se agregó correctamente
@@ -510,10 +524,11 @@ class DataManager:
         if image_path and os.path.exists(image_path):
             image_filename = self._copy_image_to_folder(image_path)
 
-        # Crear mensaje
+        # Crear mensaje con nueva estructura
         new_message = {
             "texto": text.strip(),
-            "imagen": image_filename
+            "imagen": image_filename,
+            "envio_conjunto": envio_conjunto and image_filename is not None  # Solo puede ser True si hay imagen
         }
 
         # Agregar a la lista
@@ -547,14 +562,16 @@ class DataManager:
             return True
         return False
 
-    def update_message(self, index: int, new_text: str, new_image_path: str = None) -> bool:
+    def update_message(self, index: int, new_text: str, new_image_path: str = None,
+                       envio_conjunto: bool = None) -> bool:
         """
-        Actualiza un mensaje existente
+        Actualiza un mensaje existente con soporte para cambiar modo de envío
 
         Args:
             index: Índice del mensaje a actualizar
             new_text: Nuevo texto del mensaje
             new_image_path: Nueva ruta de imagen (opcional, None para mantener actual, "" para eliminar)
+            envio_conjunto: Nuevo modo de envío (None para mantener actual)
 
         Returns:
             True si se actualizó correctamente
@@ -583,10 +600,17 @@ class DataManager:
             else:
                 new_image_filename = None
 
+        # Determinar envio_conjunto
+        final_envio_conjunto = current_message.get("envio_conjunto", False)
+        if envio_conjunto is not None:
+            # Solo puede ser True si hay imagen
+            final_envio_conjunto = envio_conjunto and new_image_filename is not None
+
         # Actualizar mensaje
         messages[index] = {
             "texto": new_text.strip(),
-            "imagen": new_image_filename
+            "imagen": new_image_filename,
+            "envio_conjunto": final_envio_conjunto
         }
 
         self._save_json(self.messages_file, {"mensajes": messages})
@@ -600,7 +624,7 @@ class DataManager:
             index: Índice del mensaje
 
         Returns:
-            Diccionario con 'texto' e 'imagen' o None si no existe
+            Diccionario con 'texto', 'imagen' y 'envio_conjunto' o None si no existe
         """
         messages = self.get_messages()
         if 0 <= index < len(messages):

@@ -4,6 +4,7 @@ Diálogos de edición de mensajes para el Bot de WhatsApp
 Este módulo implementa los diálogos modales para editar mensajes existentes,
 reutilizando los componentes de entrada de texto e imagen. Proporciona una
 interfaz intuitiva para modificar mensajes con validación y preview en tiempo real.
+ACTUALIZADO: Soporte para cambiar modo de envío conjunto/separado en edición.
 """
 
 import tkinter as tk
@@ -19,7 +20,7 @@ class DialogWindowManager:
     Se encarga de crear, centrar y configurar ventanas de diálogo
     """
 
-    def __init__(self, parent, style_manager: StyleManager, title="Diálogo", size="600x700"):
+    def __init__(self, parent, style_manager: StyleManager, title="Diálogo", size="600x750"):
         """
         Inicializa el gestor de ventana modal
 
@@ -27,7 +28,7 @@ class DialogWindowManager:
             parent: Widget padre
             style_manager: Gestor de estilos
             title: Título de la ventana
-            size: Tamaño de la ventana en formato "WxH"
+            size: Tamaño de la ventana en formato "WxH" (aumentado para el selector)
         """
         self.style_manager = style_manager
         self.parent = parent
@@ -193,10 +194,148 @@ class DialogButtonsSection:
         self.save_btn.configure(state=state)
 
 
+class SendModeDialogSelector:
+    """
+    NUEVO: Selector de modo de envío específico para diálogos de edición
+    Reutiliza la lógica pero adaptado para el contexto de edición
+    """
+
+    def __init__(self, parent, style_manager: StyleManager):
+        """
+        Inicializa el selector de modo de envío para diálogos
+
+        Args:
+            parent: Widget padre
+            style_manager: Gestor de estilos
+        """
+        self.style_manager = style_manager
+        self.envio_conjunto = tk.BooleanVar(value=False)  # Por defecto separado
+
+        # Crear interfaz (inicialmente oculta)
+        self._create_dialog_selector_interface(parent)
+        self._hide_selector()
+
+    def _create_dialog_selector_interface(self, parent):
+        """
+        Crea la interfaz del selector adaptada para diálogos
+
+        Args:
+            parent: Widget padre
+        """
+        # Frame principal
+        self.selector_frame = self.style_manager.create_styled_frame(parent)
+        self.selector_frame.pack(fill=tk.X, pady=(10, 0))
+
+        # Container interno con estilo de tarjeta
+        container = self.style_manager.create_styled_frame(self.selector_frame, "card")
+        container.configure(relief="solid", bd=1)
+        container.pack(fill=tk.X, padx=5, pady=5)
+
+        # Título explicativo específico para edición
+        title_label = self.style_manager.create_styled_label(
+            container,
+            "📤 Cambiar modo de envío:",
+            "small"
+        )
+        title_label.configure(bg=self.style_manager.colors["bg_card"])
+        title_label.pack(anchor="w", padx=8, pady=(8, 4))
+
+        # Descripción informativa
+        info_label = self.style_manager.create_styled_label(
+            container,
+            "Solo disponible cuando hay imagen Y texto",
+            "muted"
+        )
+        info_label.configure(bg=self.style_manager.colors["bg_card"])
+        info_label.pack(anchor="w", padx=8, pady=(0, 4))
+
+        # Opciones de envío
+        options_frame = self.style_manager.create_styled_frame(container, "card")
+        options_frame.pack(fill=tk.X, padx=8, pady=(0, 8))
+
+        # Opción 1: Envío separado
+        separated_radio = tk.Radiobutton(
+            options_frame,
+            text="📷+📝 Separado (imagen primero, luego texto)",
+            variable=self.envio_conjunto,
+            value=False,
+            font=self.style_manager.fonts["small"],
+            bg=self.style_manager.colors["bg_card"],
+            fg=self.style_manager.colors["text_primary"],
+            selectcolor=self.style_manager.colors["bg_accent"],
+            activebackground=self.style_manager.colors["bg_card"],
+            activeforeground=self.style_manager.colors["text_primary"],
+            border=0,
+            highlightthickness=0
+        )
+        separated_radio.pack(anchor="w", pady=(0, 4))
+
+        # Opción 2: Envío conjunto
+        together_radio = tk.Radiobutton(
+            options_frame,
+            text="🖼️📝 Conjunto (imagen con texto como caption)",
+            variable=self.envio_conjunto,
+            value=True,
+            font=self.style_manager.fonts["small"],
+            bg=self.style_manager.colors["bg_card"],
+            fg=self.style_manager.colors["text_primary"],
+            selectcolor=self.style_manager.colors["bg_accent"],
+            activebackground=self.style_manager.colors["bg_card"],
+            activeforeground=self.style_manager.colors["text_primary"],
+            border=0,
+            highlightthickness=0
+        )
+        together_radio.pack(anchor="w")
+
+    def _show_selector(self):
+        """
+        Muestra el selector de modo de envío
+        """
+        self.selector_frame.pack(fill=tk.X, pady=(10, 0))
+
+    def _hide_selector(self):
+        """
+        Oculta el selector de modo de envío
+        """
+        self.selector_frame.pack_forget()
+
+    def update_visibility(self, has_text, has_image):
+        """
+        Actualiza la visibilidad del selector según el contenido
+
+        Args:
+            has_text: Si hay texto
+            has_image: Si hay imagen
+        """
+        if has_text and has_image:
+            self._show_selector()
+        else:
+            self._hide_selector()
+
+    def get_envio_conjunto(self):
+        """
+        Obtiene el estado del envío conjunto
+
+        Returns:
+            bool: True si debe enviar junto, False si separado
+        """
+        return self.envio_conjunto.get()
+
+    def set_envio_conjunto(self, value):
+        """
+        Establece el estado del envío conjunto
+
+        Args:
+            value: True para envío conjunto, False para separado
+        """
+        self.envio_conjunto.set(value)
+
+
 class MessageEditDialogContent:
     """
     Contenido principal del diálogo de edición de mensajes
     Reutiliza componentes de entrada y maneja la lógica específica de edición
+    ACTUALIZADO: Incluye selector de modo de envío conjunto/separado
     """
 
     def __init__(self, parent, style_manager: StyleManager, message_data, data_manager):
@@ -217,8 +356,14 @@ class MessageEditDialogContent:
         # Crear contenido
         self._create_dialog_content(parent)
 
+        # NUEVO: Crear selector de modo de envío
+        self._create_send_mode_selector()
+
         # Cargar datos existentes
         self._load_existing_data()
+
+        # NUEVO: Configurar callbacks para actualizar visibilidad
+        self._setup_content_change_callbacks()
 
     def _create_dialog_content(self, parent):
         """
@@ -312,6 +457,10 @@ class MessageEditDialogContent:
         scrollbar = tk.Scrollbar(parent, orient="vertical", command=text_component.text_widget.yview)
         text_component.text_widget.configure(yscrollcommand=scrollbar.set)
 
+        # NUEVO: Bind para detectar cambios de texto en el diálogo
+        text_component.text_widget.bind('<KeyRelease>', text_component._on_text_change)
+        text_component.text_widget.bind('<ButtonRelease-1>', text_component._on_text_change)
+
     def _create_image_section(self):
         """
         Crea la sección de edición de imagen reutilizando el componente
@@ -340,9 +489,40 @@ class MessageEditDialogContent:
             fg=self.style_manager.colors["text_primary"]  # Mantener texto blanco en botón rojo
         )
 
+    def _create_send_mode_selector(self):
+        """
+        NUEVO: Crea el selector de modo de envío para el diálogo
+        """
+        self.send_mode_selector = SendModeDialogSelector(
+            self.main_frame,
+            self.style_manager
+        )
+
+    def _setup_content_change_callbacks(self):
+        """
+        NUEVO: Configura callbacks para detectar cambios en contenido
+        """
+        # Callback para cambios en texto
+        self.text_component.set_on_text_change_callback(self._update_send_mode_visibility)
+
+        # Callback para cambios en imagen
+        self.image_component.set_on_image_change_callback(self._update_send_mode_visibility)
+
+        # Actualizar visibilidad inicial (se hará después de cargar datos)
+
+    def _update_send_mode_visibility(self):
+        """
+        NUEVO: Actualiza la visibilidad del selector de modo de envío
+        """
+        has_text = not self.text_component.is_empty()
+        has_image = self.image_component.get_image_path() is not None
+
+        self.send_mode_selector.update_visibility(has_text, has_image)
+
     def _load_existing_data(self):
         """
         Carga los datos existentes del mensaje en los componentes
+        ACTUALIZADO: Incluye carga del modo de envío
         """
         # Cargar texto
         existing_text = self.message_data.get('texto', '')
@@ -350,6 +530,13 @@ class MessageEditDialogContent:
 
         # Cargar imagen si existe
         self._load_existing_image()
+
+        # NUEVO: Cargar modo de envío
+        envio_conjunto = self.message_data.get('envio_conjunto', False)
+        self.send_mode_selector.set_envio_conjunto(envio_conjunto)
+
+        # NUEVO: Actualizar visibilidad después de cargar datos
+        self._update_send_mode_visibility()
 
         # Poner foco en el texto
         self.text_component.focus()
@@ -366,12 +553,14 @@ class MessageEditDialogContent:
     def get_edited_data(self):
         """
         Obtiene los datos editados del mensaje
+        ACTUALIZADO: Incluye el modo de envío
 
         Returns:
             dict: Diccionario con los datos editados
         """
         text = self.text_component.get_text()
         new_image_path = self.image_component.get_image_path()
+        envio_conjunto = self.send_mode_selector.get_envio_conjunto()
 
         # Determinar si la imagen cambió
         original_image_path = None
@@ -383,7 +572,8 @@ class MessageEditDialogContent:
         return {
             'texto': text,
             'nueva_imagen': new_image_path if image_changed else None,
-            'imagen_cambio': image_changed
+            'imagen_cambio': image_changed,
+            'envio_conjunto': envio_conjunto  # NUEVO: Incluir modo de envío
         }
 
     def validate_data(self):
@@ -412,6 +602,7 @@ class MessageEditDialog:
     """
     Diálogo principal para editar mensajes
     Coordina todos los componentes y maneja el flujo de edición
+    ACTUALIZADO: Soporte completo para edición de modo de envío conjunto/separado
     """
 
     def __init__(self, parent, style_manager: StyleManager, message_data, data_manager, callback):
@@ -444,12 +635,12 @@ class MessageEditDialog:
             parent: Widget padre
             message_data: Datos del mensaje
         """
-        # Gestor de ventana
+        # Gestor de ventana (ventana más alta para el selector)
         self.window_manager = DialogWindowManager(
             parent,
             self.style_manager,
             "Editar Mensaje",
-            "600x700"
+            "600x750"  # Aumentado de 700 a 750 para el selector
         )
 
         # Contenido del diálogo
@@ -478,6 +669,7 @@ class MessageEditDialog:
     def _save_changes(self):
         """
         Guarda los cambios y cierra el diálogo
+        ACTUALIZADO: Incluye validación y manejo del modo de envío
         """
         # Validar datos
         is_valid, error_message = self.content.validate_data()
@@ -485,8 +677,18 @@ class MessageEditDialog:
             show_validation_error(error_message)
             return
 
-        # Obtener datos editados
+        # Obtener datos editados (ahora incluye envio_conjunto)
         self.result = self.content.get_edited_data()
+
+        # NUEVO: Mostrar información del modo de envío si cambió
+        if 'envio_conjunto' in self.result:
+            envio_conjunto = self.result['envio_conjunto']
+            has_image = self.content.image_component.get_image_path() is not None
+            has_text = not self.content.text_component.is_empty()
+
+            if has_image and has_text:
+                mode_text = "conjunto (caption)" if envio_conjunto else "separado"
+                print(f"[Dialog] Modo de envío: {mode_text}")
 
         # Ejecutar callback y cerrar
         if self.callback:
