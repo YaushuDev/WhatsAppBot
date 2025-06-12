@@ -1,10 +1,11 @@
 # whatsapp_bot.py
 """
-Bot de WhatsApp automatizado optimizado con soporte completo para emoticones
+Bot de WhatsApp automatizado optimizado con soporte completo para emoticones y envío secuencial
 Maneja la automatización del envío de mensajes a través de WhatsApp Web usando Selenium.
 Incluye soporte robusto para emoticones y caracteres Unicode mediante JavaScript injection,
 solucionando las limitaciones de ChromeDriver con caracteres fuera del BMP.
 Optimizado para velocidad: envío de texto ~10s, envío con imagen ~20-25s máximo.
+NUEVO: Sistema de envío secuencial que recorre los mensajes en orden cíclico.
 """
 
 import time
@@ -27,7 +28,7 @@ from typing import List, Dict, Any, Callable, Optional
 class WhatsAppBot:
     """
     Bot automatizado para WhatsApp Web con soporte completo para emoticones y caracteres Unicode
-    Optimizado para velocidad y eficiencia en el envío de mensajes
+    Optimizado para velocidad y eficiencia en el envío de mensajes con sistema secuencial
     """
 
     def __init__(self, status_callback: Optional[Callable] = None):
@@ -47,6 +48,9 @@ class WhatsAppBot:
         # Cache para elementos encontrados (optimización)
         self._element_cache = {}
         self._last_contact = None
+
+        # Nuevo: Índice para envío secuencial
+        self._message_index = 0
 
         # Configuración de Chrome optimizada
         self.chrome_options = self._configure_chrome_options()
@@ -828,10 +832,38 @@ class WhatsAppBot:
             self._update_status(f"❌ Error general enviando a {phone_number}: {str(e)}")
             return False
 
+    def _get_next_message_sequential(self, messages: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Obtiene el siguiente mensaje en orden secuencial/cíclico
+
+        Args:
+            messages: Lista de mensajes disponibles
+
+        Returns:
+            Mensaje seleccionado según el índice secuencial
+        """
+        if not messages:
+            return {}
+
+        # Seleccionar mensaje usando índice secuencial con módulo para hacer ciclo
+        selected_message = messages[self._message_index % len(messages)]
+
+        # Incrementar índice para el siguiente mensaje
+        self._message_index += 1
+
+        return selected_message
+
+    def _reset_sequential_index(self):
+        """
+        Reinicia el índice secuencial para una nueva sesión de automatización
+        """
+        self._message_index = 0
+
     def start_automation(self, phone_numbers: List[str], messages: List[Dict[str, Any]],
                          min_interval: int, max_interval: int):
         """
-        Inicia la automatización del envío de mensajes (optimizado)
+        Inicia la automatización del envío de mensajes con sistema secuencial
+        NUEVO: Los mensajes se envían en orden secuencial/cíclico
 
         Args:
             phone_numbers: Lista de números de teléfono
@@ -848,13 +880,14 @@ class WhatsAppBot:
             self.current_session_contacts = phone_numbers.copy()
             self.current_session_messages = messages.copy()
 
-            # Limpiar cache
+            # Limpiar cache y reiniciar índice secuencial
             self._element_cache = {}
             self._last_contact = None
+            self._reset_sequential_index()  # NUEVO: Reiniciar contador secuencial
             if hasattr(self, '_validated_images'):
                 delattr(self, '_validated_images')
 
-            self._update_status("🚀 Iniciando automatización...")
+            self._update_status("🚀 Iniciando automatización con envío secuencial...")
 
             if not self._initialize_driver():
                 self.is_running = False
@@ -877,7 +910,9 @@ class WhatsAppBot:
                 self.is_running = False
                 return
 
-            self._update_status(f"📊 Iniciando envío a {len(phone_numbers)} contactos con {len(messages)} mensajes")
+            self._update_status(
+                f"📊 Iniciando envío secuencial a {len(phone_numbers)} contactos con {len(messages)} mensajes")
+            self._update_status(f"🔄 Patrón: Mensaje 1→2→3...→{len(messages)}→1→2... (cíclico)")
 
             messages_sent = 0
             messages_failed = 0
@@ -892,7 +927,11 @@ class WhatsAppBot:
                         self._update_status("❌ Sesión perdida, deteniendo automatización")
                         break
 
-                    selected_message = random.choice(messages)
+                    # NUEVO: Usar selección secuencial en lugar de aleatoria
+                    selected_message = self._get_next_message_sequential(messages)
+
+                    # Calcular cuál mensaje del ciclo es (para mostrar en status)
+                    message_cycle_position = (i % len(messages)) + 1
 
                     message_text = selected_message.get('texto', '')[:50] + "..." if len(
                         selected_message.get('texto', '')) > 50 else selected_message.get('texto', '')
@@ -903,7 +942,9 @@ class WhatsAppBot:
                     image_indicator = " 📷" if has_image else ""
                     message_info = f"'{message_text}'{emoji_indicator}{image_indicator}"
 
-                    self._update_status(f"📱 ({i + 1}/{len(phone_numbers)}) Enviando a {phone_number}: {message_info}")
+                    # NUEVO: Mostrar información del patrón secuencial
+                    self._update_status(
+                        f"📱 ({i + 1}/{len(phone_numbers)}) [Mensaje {message_cycle_position}/{len(messages)}] → {phone_number}: {message_info}")
 
                     if self.send_message_to_contact(phone_number, selected_message):
                         messages_sent += 1
@@ -926,7 +967,7 @@ class WhatsAppBot:
 
             if self.is_running:
                 self._update_status(
-                    f"✅ Automatización completada: {messages_sent} enviados, {messages_failed} fallidos")
+                    f"✅ Automatización secuencial completada: {messages_sent} enviados, {messages_failed} fallidos")
             else:
                 self._update_status(f"⏹ Automatización detenida: {messages_sent} enviados, {messages_failed} fallidos")
 
@@ -971,6 +1012,7 @@ class WhatsAppBot:
             # Limpiar cache
             self._element_cache = {}
             self._last_contact = None
+            self._reset_sequential_index()
 
     def get_session_info(self) -> Dict[str, Any]:
         """
@@ -983,5 +1025,6 @@ class WhatsAppBot:
             'is_running': self.is_running,
             'contacts_count': len(self.current_session_contacts),
             'messages_count': len(self.current_session_messages),
-            'driver_active': self.driver is not None
+            'driver_active': self.driver is not None,
+            'current_message_index': self._message_index  # NUEVO: Incluir índice actual
         }
