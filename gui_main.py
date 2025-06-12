@@ -46,7 +46,7 @@ class WhatsAppBotGUI:
         self.style_manager.configure_window(
             self.root,
             "Bot de WhatsApp",
-            "900x900",
+            "900x1000",
             "icon.ico"
         )
 
