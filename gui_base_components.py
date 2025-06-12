@@ -1,6 +1,6 @@
 # gui_base_components.py
 """
-Componentes base y reutilizables para el Bot de WhatsApp
+Componentes base y reutilizables para el Bot de WhatsApp.
 Este módulo contiene los componentes fundamentales que se usan en múltiples partes
 de la interfaz: navegación, elementos base de UI, emoticones y diálogos comunes.
 Proporciona la base arquitectónica para el resto de componentes especializados.
@@ -68,16 +68,6 @@ class EmojiMenu:
             "normal"
         )
         self.toggle_btn.pack(side=tk.LEFT)
-
-        # Botón de ayuda
-        help_btn = self.style_manager.create_styled_button(
-            header_frame,
-            "ℹ️",
-            self._show_help,
-            "normal"
-        )
-        help_btn.configure(width=3)
-        help_btn.pack(side=tk.RIGHT)
 
         # Contenedor para el menú expandible (inicialmente oculto)
         self.emoji_container = self.style_manager.create_styled_frame(self.menu_frame, "card")
@@ -232,27 +222,6 @@ class EmojiMenu:
         """
         if self.insert_callback:
             self.insert_callback(emoji)
-
-    def _show_help(self):
-        """
-        Muestra ayuda sobre el uso de emoticones
-        """
-        help_text = """🎯 Ayuda - Menú de Emoticones
-
-✨ Cómo usar:
-• Haz clic en cualquier emoji para insertarlo
-• Navega por las categorías usando las pestañas
-• Los más usados están en la parte inferior
-
-📱 Soporte mejorado:
-• Todos los emoticones son compatibles
-• Se envían correctamente por WhatsApp
-• Funcionan en cualquier dispositivo
-
-💡 Consejo:
-Usa emoticones para hacer tus mensajes más expresivos y amigables."""
-
-        messagebox.showinfo("😀 Ayuda - Emoticones", help_text)
 
 
 class NavigationSidebar:
@@ -588,8 +557,8 @@ class ListManager:
         listbox_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 15))
         listbox_frame.configure(relief="solid", bd=1)
 
-        # Listbox con altura fija mejorada
-        self.listbox = style_manager.create_styled_listbox(listbox_frame, height=12)
+        # Listbox con altura más compacta
+        self.listbox = style_manager.create_styled_listbox(listbox_frame, height=8)
         self.listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=2, pady=2)
 
         # Scrollbar con mejor estilo

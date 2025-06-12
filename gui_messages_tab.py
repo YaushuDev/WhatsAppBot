@@ -1,6 +1,6 @@
 # gui_messages_tab.py
 """
-Pestaña principal de gestión de mensajes para el Bot de WhatsApp
+Pestaña principal de gestión de mensajes para el Bot de WhatsApp.
 Este módulo coordina los componentes de entrada y edición de mensajes, proporcionando
 una interfaz unificada para la gestión completa de mensajes con texto, imágenes y emoticones.
 Reutiliza componentes modularizados para mantener el código limpio y escalable.
@@ -367,8 +367,7 @@ class MessagesTab:
             self.frame,
             self.style_manager,
             "Gestión de Mensajes",
-            "Crea mensajes con texto e imágenes que el bot enviará aleatoriamente. "
-            "Usa el menú de emoticones para hacer tus mensajes más expresivos 😊🎉"
+            "Crea y administra mensajes con texto e imágenes"
         )
 
     def _create_input_section(self):
