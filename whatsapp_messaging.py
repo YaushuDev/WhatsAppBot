@@ -128,9 +128,38 @@ class MessageSender:
             clickable=True
         )
 
+    def _check_if_message_was_sent(self, original_text: str) -> bool:
+        """
+        NUEVA FUNCIÓN: Verifica si un mensaje fue enviado comprobando el estado del campo
+
+        Args:
+            original_text: Texto original que se intentó enviar
+
+        Returns:
+            True si el mensaje parece haber sido enviado
+        """
+        try:
+            message_box = self._get_message_box()
+            if not message_box:
+                return False
+
+            # Obtener texto actual del campo
+            current_text = message_box.get_attribute('textContent') or message_box.text or ''
+            current_text = current_text.strip()
+
+            # Si el campo está vacío o no contiene el texto original, probablemente se envió
+            if not current_text or current_text != original_text.strip():
+                return True
+
+            return False
+
+        except Exception as e:
+            self._update_status(f"Error verificando envío: {str(e)}")
+            return False
+
     def _send_text_with_javascript(self, message_text: str) -> bool:
         """
-        Envía texto usando JavaScript con soporte completo para emoticones
+        MEJORADO: Envía texto usando JavaScript con manejo mejorado de Promises y verificación de envío
 
         Args:
             message_text: Texto del mensaje
@@ -141,26 +170,47 @@ class MessageSender:
         try:
             self._update_status("📝 Enviando mensaje con soporte de emoticones...")
 
-            # Crear script JavaScript usando la utilidad
+            # Crear script JavaScript usando la utilidad mejorada
             js_script = JavaScriptInjector.create_message_sender_script(message_text)
 
-            # Ejecutar script
+            # MEJORA 1: Ejecutar script y manejar el resultado de manera asíncrona
             result = self.driver_manager.execute_script(js_script)
-            time.sleep(1.5)
 
-            if result is not False:
+            # MEJORA 2: Si el script retorna una Promise, esperarla
+            if result is None:
+                # El script puede estar ejecutándose asincrónicamente, esperar un poco
+                time.sleep(1.5)
+
+                # MEJORA 3: Verificar si el mensaje se envió comprobando el estado del campo
+                if self._check_if_message_was_sent(message_text):
+                    self._update_status("✅ Mensaje con emoticones enviado correctamente")
+                    return True
+                else:
+                    self._update_status("⚠️ JavaScript no confirmó envío, verificando estado...")
+                    return False
+
+            # MEJORA 4: Manejar resultado directo del script
+            elif result is True:
                 self._update_status("✅ Mensaje con emoticones enviado correctamente")
                 return True
+
+            # MEJORA 5: Si result es False, verificar una vez más antes de fallar
             else:
-                return self._send_text_fallback(message_text)
+                time.sleep(1)
+                if self._check_if_message_was_sent(message_text):
+                    self._update_status("✅ Mensaje con emoticones enviado (verificación secundaria)")
+                    return True
+                else:
+                    self._update_status("❌ JavaScript falló, intentando método alternativo...")
+                    return False
 
         except Exception as e:
             self._update_status(f"❌ Error en envío JavaScript: {str(e)}")
-            return self._send_text_fallback(message_text)
+            return False
 
     def _send_text_fallback(self, message_text: str) -> bool:
         """
-        Método de fallback para enviar texto usando Selenium tradicional
+        MEJORADO: Método de fallback con verificación previa para evitar doble envío
 
         Args:
             message_text: Texto del mensaje
@@ -169,6 +219,11 @@ class MessageSender:
             True si se envió correctamente
         """
         try:
+            # MEJORA 1: Verificar si el mensaje ya se envió antes de intentar fallback
+            if self._check_if_message_was_sent(message_text):
+                self._update_status("✅ Mensaje ya fue enviado, omitiendo fallback")
+                return True
+
             self._update_status("📝 Enviando con método tradicional...")
 
             message_box = self._get_message_box()
@@ -204,7 +259,7 @@ class MessageSender:
 
     def send_text_message(self, message_text: str, contact_data: Optional[Dict[str, str]] = None) -> bool:
         """
-        Envía un mensaje de texto con detección inteligente de emoticones y personalización
+        MEJORADO: Envía un mensaje de texto con lógica mejorada para evitar doble envío
 
         Args:
             message_text: Texto del mensaje a enviar
@@ -228,10 +283,25 @@ class MessageSender:
                 final_message = self.personalizer.personalize_message(message_text, contact_data)
                 self._update_status(f"📝 Mensaje personalizado para {contact_data.get('nombre', 'contacto')}")
 
-            # Detección inteligente de emoticones
+            # MEJORA: Detección inteligente de emoticones con manejo mejorado
             if UnicodeHandler.has_emoji_or_unicode(final_message):
                 self._update_status("😀 Detectados emoticones, usando método avanzado...")
-                return self._send_text_with_javascript(final_message)
+
+                # Intentar método JavaScript
+                javascript_success = self._send_text_with_javascript(final_message)
+
+                if javascript_success:
+                    return True
+
+                # MEJORA: Verificar una vez más antes de usar fallback
+                time.sleep(1)
+                if self._check_if_message_was_sent(final_message):
+                    self._update_status("✅ Mensaje enviado (verificación final)")
+                    return True
+
+                # Solo usar fallback si realmente no se envió
+                self._update_status("⚠️ Método JavaScript falló, usando fallback...")
+                return self._send_text_fallback(final_message)
             else:
                 self._update_status("📝 Enviando texto simple...")
                 return self._send_text_fallback(final_message)

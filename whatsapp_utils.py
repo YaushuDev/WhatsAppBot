@@ -211,7 +211,8 @@ class JavaScriptInjector:
     @staticmethod
     def create_message_sender_script(message_text: str) -> str:
         """
-        Crea script JavaScript para enviar mensajes con soporte Unicode
+        Crea script JavaScript mejorado para enviar mensajes con soporte Unicode
+        SOLUCION: Mejorada para evitar doble envío de mensajes con emoticones
 
         Args:
             message_text: Texto del mensaje a enviar
@@ -224,41 +225,79 @@ class JavaScriptInjector:
         return f"""
         function sendMessageOptimized() {{
             try {{
+                // PASO 1: Buscar el campo de mensaje con selectores mejorados
                 const messageBox = document.querySelector('[contenteditable="true"][data-tab="10"]') ||
                                  document.querySelector('[role="textbox"][title*="mensaje"]') ||
-                                 document.querySelector('[data-testid="conversation-compose-box-input"]');
+                                 document.querySelector('[data-testid="conversation-compose-box-input"]') ||
+                                 document.querySelector('div[contenteditable="true"][dir="ltr"]');
 
-                if (!messageBox) return false;
+                if (!messageBox) {{
+                    console.log("MessageBox no encontrado");
+                    return false;
+                }}
 
+                // PASO 2: Limpiar y preparar el campo
                 messageBox.focus();
                 messageBox.innerHTML = '';
 
+                // PASO 3: Insertar el texto con método mejorado
                 const textToSend = "{escaped_text}";
-                const textNode = document.createTextNode(textToSend);
-                messageBox.appendChild(textNode);
 
-                const inputEvent = new InputEvent('input', {{
-                    bubbles: true,
-                    cancelable: true,
-                    data: textToSend
-                }});
-                messageBox.dispatchEvent(inputEvent);
+                // Usar execCommand como método primario para emoticones
+                document.execCommand('insertText', false, textToSend);
 
-                const sendButton = document.querySelector('[data-testid="send"]') ||
-                                 document.querySelector('[aria-label*="Enviar"]') ||
-                                 document.querySelector('span[data-icon="send"]').closest('button');
-
-                if (sendButton) {{
-                    sendButton.click();
-                    return true;
+                // Fallback: método de nodo de texto
+                if (messageBox.textContent !== textToSend) {{
+                    messageBox.innerHTML = '';
+                    const textNode = document.createTextNode(textToSend);
+                    messageBox.appendChild(textNode);
                 }}
-                return false;
+
+                // PASO 4: Disparar eventos necesarios
+                const events = ['input', 'change', 'keyup'];
+                events.forEach(eventType => {{
+                    const event = new Event(eventType, {{
+                        bubbles: true,
+                        cancelable: true
+                    }});
+                    messageBox.dispatchEvent(event);
+                }});
+
+                // PASO 5: Esperar breve momento para que aparezca el botón de envío
+                return new Promise(resolve => {{
+                    setTimeout(() => {{
+                        // Buscar botón de envío con selectores mejorados
+                        const sendButton = document.querySelector('[data-testid="send"]') ||
+                                         document.querySelector('button[aria-label*="Enviar"]') ||
+                                         document.querySelector('span[data-icon="send"]')?.closest('button') ||
+                                         document.querySelector('div[role="button"][aria-label*="Enviar"]') ||
+                                         document.querySelector('button[aria-label*="Send"]');
+
+                        if (sendButton && !sendButton.disabled) {{
+                            console.log("Enviando mensaje con botón encontrado");
+                            sendButton.click();
+
+                            // PASO 6: Verificar que el mensaje se envió
+                            setTimeout(() => {{
+                                const currentText = messageBox.textContent || messageBox.innerText || '';
+                                const wasCleared = currentText.trim() === '' || currentText !== textToSend;
+                                console.log("Mensaje enviado:", wasCleared);
+                                resolve(wasCleared);
+                            }}, 500);
+                        }} else {{
+                            console.log("Botón de envío no encontrado o deshabilitado");
+                            resolve(false);
+                        }}
+                    }}, 300);
+                }});
 
             }} catch (error) {{
-                console.log("Error:", error);
+                console.log("Error en sendMessageOptimized:", error);
                 return false;
             }}
         }}
+
+        // Ejecutar la función y retornar el resultado
         return sendMessageOptimized();
         """
 
