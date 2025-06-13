@@ -5,6 +5,7 @@ Este módulo implementa los diálogos modales para editar mensajes existentes,
 reutilizando los componentes de entrada de texto e imagen. Proporciona una
 interfaz intuitiva para modificar mensajes con validación y preview en tiempo real.
 ACTUALIZADO: Soporte para cambiar modo de envío conjunto/separado en edición.
+CORREGIDO: Manejo correcto de eliminación de imágenes durante la edición.
 """
 
 import tkinter as tk
@@ -336,6 +337,7 @@ class MessageEditDialogContent:
     Contenido principal del diálogo de edición de mensajes
     Reutiliza componentes de entrada y maneja la lógica específica de edición
     ACTUALIZADO: Incluye selector de modo de envío conjunto/separado
+    CORREGIDO: Manejo correcto de eliminación de imágenes
     """
 
     def __init__(self, parent, style_manager: StyleManager, message_data, data_manager):
@@ -552,7 +554,7 @@ class MessageEditDialogContent:
 
     def get_edited_data(self):
         """
-        Obtiene los datos editados del mensaje
+        CORREGIDO: Obtiene los datos editados del mensaje con manejo correcto de eliminación de imágenes
         ACTUALIZADO: Incluye el modo de envío
 
         Returns:
@@ -562,18 +564,37 @@ class MessageEditDialogContent:
         new_image_path = self.image_component.get_image_path()
         envio_conjunto = self.send_mode_selector.get_envio_conjunto()
 
-        # Determinar si la imagen cambió
+        # CORREGIDO: Determinar cambios de imagen y manejo correcto de eliminación
         original_image_path = None
         if self.original_image_filename:
             original_image_path = self.data_manager.get_image_path(self.original_image_filename)
 
-        image_changed = new_image_path != original_image_path
+        # Lógica corregida para detectar y manejar cambios de imagen
+        nueva_imagen_value = None
+        imagen_cambio = False
+
+        if self.original_image_filename and not new_image_path:
+            # CASO 1: Había imagen y ahora no hay → Usuario eliminó la imagen
+            nueva_imagen_value = ""  # String vacío indica eliminación explícita
+            imagen_cambio = True
+        elif not self.original_image_filename and new_image_path:
+            # CASO 2: No había imagen y ahora hay → Usuario agregó imagen
+            nueva_imagen_value = new_image_path
+            imagen_cambio = True
+        elif self.original_image_filename and new_image_path:
+            # CASO 3: Había imagen y sigue habiendo → Verificar si cambió
+            if new_image_path != original_image_path:
+                # Usuario cambió por otra imagen
+                nueva_imagen_value = new_image_path
+                imagen_cambio = True
+            # Si son iguales, no hay cambio (nueva_imagen_value = None, imagen_cambio = False)
+        # CASO 4: No había imagen y sigue sin haber → No hay cambio (valores por defecto)
 
         return {
             'texto': text,
-            'nueva_imagen': new_image_path if image_changed else None,
-            'imagen_cambio': image_changed,
-            'envio_conjunto': envio_conjunto  # NUEVO: Incluir modo de envío
+            'nueva_imagen': nueva_imagen_value,
+            'imagen_cambio': imagen_cambio,
+            'envio_conjunto': envio_conjunto
         }
 
     def validate_data(self):

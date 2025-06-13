@@ -6,6 +6,7 @@ para texto e imágenes utilizando archivos JSON para almacenar la información l
 Incluye compatibilidad con formatos anteriores, migración automática de datos, nueva
 funcionalidad para envío conjunto de imagen con texto como caption y configuración
 de preferencias del navegador.
+CORREGIDO: Manejo correcto de eliminación de imágenes en la edición de mensajes.
 """
 
 import json
@@ -595,12 +596,12 @@ class DataManager:
     def update_message(self, index: int, new_text: str, new_image_path: str = None,
                        envio_conjunto: bool = None) -> bool:
         """
-        Actualiza un mensaje existente con soporte para cambiar modo de envío
+        CORREGIDO: Actualiza un mensaje existente con soporte correcto para eliminación de imágenes
 
         Args:
             index: Índice del mensaje a actualizar
             new_text: Nuevo texto del mensaje
-            new_image_path: Nueva ruta de imagen (opcional, None para mantener actual, "" para eliminar)
+            new_image_path: Nueva ruta de imagen (None=no cambiar, ""=eliminar, ruta=cambiar)
             envio_conjunto: Nuevo modo de envío (None para mantener actual)
 
         Returns:
@@ -616,19 +617,29 @@ class DataManager:
 
         current_message = messages[index]
 
-        # Manejar imagen
-        new_image_filename = current_message.get("imagen")
+        # CORREGIDO: Manejar imagen con lógica explícita para eliminación
+        new_image_filename = current_message.get("imagen")  # Mantener la actual por defecto
 
         if new_image_path is not None:  # Se especificó cambio de imagen
-            # Eliminar imagen anterior si existe
-            if current_message.get("imagen"):
-                self._delete_message_image(current_message["imagen"])
-
-            # Procesar nueva imagen
-            if new_image_path and os.path.exists(new_image_path):
-                new_image_filename = self._copy_image_to_folder(new_image_path)
-            else:
+            if new_image_path == "":
+                # CASO 1: String vacío = eliminar imagen actual
+                if current_message.get("imagen"):
+                    self._delete_message_image(current_message["imagen"])
                 new_image_filename = None
+                print(f"[DataManager] Imagen eliminada del mensaje {index}")
+
+            elif new_image_path and os.path.exists(new_image_path):
+                # CASO 2: Nueva ruta válida = cambiar imagen
+                # Eliminar imagen anterior si existe
+                if current_message.get("imagen"):
+                    self._delete_message_image(current_message["imagen"])
+                # Agregar nueva imagen
+                new_image_filename = self._copy_image_to_folder(new_image_path)
+                print(f"[DataManager] Imagen cambiada en mensaje {index}")
+            else:
+                # CASO 3: Ruta inválida = mantener imagen actual (no hacer nada)
+                print(f"[DataManager] Ruta de imagen inválida, manteniendo imagen actual")
+        # Si new_image_path es None, mantener imagen actual (new_image_filename ya está establecido)
 
         # Determinar envio_conjunto
         final_envio_conjunto = current_message.get("envio_conjunto", False)
@@ -644,6 +655,11 @@ class DataManager:
         }
 
         self._save_json(self.messages_file, {"mensajes": messages})
+
+        # Debug: confirmar el estado del mensaje actualizado
+        print(
+            f"[DataManager] Mensaje {index} actualizado - imagen: {new_image_filename}, envio_conjunto: {final_envio_conjunto}")
+
         return True
 
     def get_message_by_index(self, index: int) -> Optional[Dict[str, Any]]:
