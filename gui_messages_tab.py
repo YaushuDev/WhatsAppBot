@@ -5,14 +5,15 @@ Este módulo coordina los componentes de entrada y edición de mensajes con layo
 compacto donde la creación está a la izquierda y la lista a la derecha. Proporciona una
 interfaz unificada para la gestión completa de mensajes con texto, imágenes y emoticones
 optimizada para pantallas de 1000x600px.
-ACTUALIZADO: Soporte para envío conjunto de imagen con texto como caption y indicadores visuales mejorados.
+ACTUALIZADO: Restricción del primer mensaje sin imágenes debido a error de WhatsApp Web.
 """
 
 import re
 import tkinter as tk
 from gui_styles import StyleManager
 from gui_components import (ListManager, show_validation_error,
-                            show_success_message, show_error_message, show_confirmation_dialog)
+                            show_success_message, show_error_message, show_confirmation_dialog,
+                            show_first_message_image_restriction)  # NUEVO: Importar restricción
 from gui_message_input import MessageInputSection
 from gui_message_dialog import MessageEditDialog
 
@@ -190,7 +191,7 @@ class MessageOperationsHandler:
     """
     Manejador especializado para operaciones CRUD de mensajes
     Centraliza la lógica de negocio para agregar, editar y eliminar mensajes
-    ACTUALIZADO: Soporte para envío conjunto de imagen con texto
+    ACTUALIZADO: Validaciones para restricción del primer mensaje sin imágenes
     """
 
     def __init__(self, data_manager, input_section, list_manager):
@@ -208,7 +209,7 @@ class MessageOperationsHandler:
 
     def add_message(self):
         """
-        Agrega un nuevo mensaje al sistema con soporte para envío conjunto
+        ACTUALIZADO: Agrega un nuevo mensaje con validación de restricción del primer mensaje
         """
         # Validar entrada
         is_valid, error_message = self.input_section.validate_input()
@@ -217,8 +218,17 @@ class MessageOperationsHandler:
             self.input_section.focus_text()
             return
 
-        # NUEVO: Obtener datos incluyendo modo de envío
+        # Obtener datos incluyendo modo de envío
         text, image_path, envio_conjunto = self.input_section.get_values()
+
+        # NUEVO: Validar restricción del primer mensaje
+        current_messages = self.data_manager.get_messages()
+        is_first_message = len(current_messages) == 0
+        has_image = image_path is not None
+
+        if is_first_message and has_image:
+            show_first_message_image_restriction()
+            return  # No continuar con la operación
 
         # Intentar agregar mensaje con nuevo parámetro
         if self.data_manager.add_message(text, image_path, envio_conjunto):
@@ -252,7 +262,7 @@ class MessageOperationsHandler:
 
     def edit_message(self):
         """
-        Edita el mensaje seleccionado
+        ACTUALIZADO: Edita el mensaje seleccionado con validación de restricción del primer mensaje
         """
         # Obtener selección
         index, display_text = self.list_manager.get_selection()
@@ -267,21 +277,18 @@ class MessageOperationsHandler:
             show_error_message("Mensaje no encontrado")
             return
 
-        # Mostrar diálogo de edición
-        self._show_edit_dialog(message_data, index)
-
-    def _show_edit_dialog(self, message_data, index):
-        """
-        Muestra el diálogo de edición de mensaje
-
-        Args:
-            message_data: Datos del mensaje
-            index: Índice del mensaje
-        """
-
+        # NUEVO: Preparar información para validación en el callback
         def on_edit_complete(new_data):
             if new_data:
-                # NUEVO: Pasar el parámetro envio_conjunto actualizado
+                # NUEVO: Validar restricción del primer mensaje antes de actualizar
+                is_first_message = index == 0
+                is_adding_image = new_data.get('imagen_cambio', False) and new_data.get('nueva_imagen') not in [None, ""]
+
+                if is_first_message and is_adding_image:
+                    show_first_message_image_restriction()
+                    return  # No continuar con la actualización
+
+                # Continuar con la actualización normal
                 success = self.data_manager.update_message(
                     index,
                     new_data['texto'],
@@ -304,6 +311,18 @@ class MessageOperationsHandler:
                 else:
                     show_error_message("Error al actualizar el mensaje")
 
+        # Mostrar diálogo de edición
+        self._show_edit_dialog(message_data, index, on_edit_complete)
+
+    def _show_edit_dialog(self, message_data, index, on_edit_complete):
+        """
+        Muestra el diálogo de edición de mensaje
+
+        Args:
+            message_data: Datos del mensaje
+            index: Índice del mensaje
+            on_edit_complete: Callback para completar edición
+        """
         # Crear diálogo (necesitamos el toplevel, lo obtenemos de input_section)
         parent_window = self.input_section.input_frame.winfo_toplevel()
 
@@ -370,7 +389,7 @@ class MessagesTab:
     """
     Pestaña principal de gestión de mensajes con layout horizontal compacto
     Coordina todos los componentes para proporcionar funcionalidad completa optimizada para 1000x600px
-    ACTUALIZADO: Soporte completo para envío conjunto de imagen con texto como caption
+    ACTUALIZADO: Soporte completo para envío conjunto de imagen con texto como caption y restricción del primer mensaje
     """
 
     def __init__(self, parent, style_manager: StyleManager, data_manager):

@@ -5,8 +5,7 @@ Maneja la persistencia y gestión de contactos (nombre y número) y mensajes con
 para texto e imágenes utilizando archivos JSON para almacenar la información localmente.
 Incluye compatibilidad con formatos anteriores, migración automática de datos, nueva
 funcionalidad para envío conjunto de imagen con texto como caption y configuración
-de preferencias del navegador.
-CORREGIDO: Manejo correcto de eliminación de imágenes en la edición de mensajes.
+de preferencias del navegador. ACTUALIZADO: Restricción del primer mensaje sin imágenes.
 """
 
 import json
@@ -19,7 +18,8 @@ class DataManager:
     """
     Clase para gestionar la persistencia de datos del bot
     Maneja contactos con nombre y número, mensajes con texto, imágenes, opciones de envío
-    y configuraciones de automatización incluyendo preferencias del navegador
+    y configuraciones de automatización incluyendo preferencias del navegador.
+    ACTUALIZADO: Validaciones para evitar imágenes en el primer mensaje.
     """
 
     def __init__(self):
@@ -238,6 +238,19 @@ class DataManager:
                     os.remove(image_path)
             except Exception as e:
                 print(f"Error al eliminar imagen {image_filename}: {e}")
+
+    def _is_first_message_with_image(self, will_be_first: bool, has_image: bool) -> bool:
+        """
+        NUEVO: Verifica si se está intentando crear/editar el primer mensaje con imagen
+
+        Args:
+            will_be_first: Si será el primer mensaje (True para nuevo mensaje en lista vacía, o edición de índice 0)
+            has_image: Si tiene o tendrá imagen
+
+        Returns:
+            True si es primer mensaje con imagen (caso no permitido)
+        """
+        return will_be_first and has_image
 
     def get_image_path(self, image_filename: str) -> Optional[str]:
         """
@@ -494,7 +507,7 @@ class DataManager:
                 return self.remove_contact(i)
         return False
 
-    # Gestión de mensajes (actualizada para soporte de envío conjunto)
+    # Gestión de mensajes (actualizada con restricción del primer mensaje)
     def get_messages(self) -> List[Dict[str, Any]]:
         """
         Obtiene la lista de mensajes guardados con formato completo
@@ -537,7 +550,7 @@ class DataManager:
 
     def add_message(self, text: str, image_path: str = None, envio_conjunto: bool = False) -> bool:
         """
-        Agrega un mensaje con texto, imagen opcional y configuración de envío
+        ACTUALIZADO: Agrega un mensaje con validación de restricción del primer mensaje
 
         Args:
             text: Texto del mensaje
@@ -545,10 +558,18 @@ class DataManager:
             envio_conjunto: Si debe enviar imagen y texto juntos como caption
 
         Returns:
-            True si se agregó correctamente
+            True si se agregó correctamente, False si es primer mensaje con imagen
         """
         if not text.strip():
             return False
+
+        # NUEVO: Verificar restricción del primer mensaje
+        current_messages = self.get_messages()
+        is_first_message = len(current_messages) == 0
+        has_image = image_path is not None and os.path.exists(image_path)
+
+        if self._is_first_message_with_image(is_first_message, has_image):
+            return False  # No permitir primer mensaje con imagen
 
         # Procesar imagen si se proporciona
         image_filename = None
@@ -596,7 +617,7 @@ class DataManager:
     def update_message(self, index: int, new_text: str, new_image_path: str = None,
                        envio_conjunto: bool = None) -> bool:
         """
-        CORREGIDO: Actualiza un mensaje existente con soporte correcto para eliminación de imágenes
+        ACTUALIZADO: Actualiza un mensaje existente con validación de primer mensaje
 
         Args:
             index: Índice del mensaje a actualizar
@@ -605,7 +626,7 @@ class DataManager:
             envio_conjunto: Nuevo modo de envío (None para mantener actual)
 
         Returns:
-            True si se actualizó correctamente
+            True si se actualizó correctamente, False si es primer mensaje con imagen
         """
         if not new_text.strip():
             return False
@@ -617,7 +638,14 @@ class DataManager:
 
         current_message = messages[index]
 
-        # CORREGIDO: Manejar imagen con lógica explícita para eliminación
+        # NUEVO: Verificar restricción del primer mensaje (solo si se está agregando/cambiando imagen)
+        is_first_message = index == 0
+        is_adding_image = new_image_path is not None and new_image_path != ""
+
+        if self._is_first_message_with_image(is_first_message, is_adding_image):
+            return False  # No permitir agregar imagen al primer mensaje
+
+        # Manejar imagen con lógica explícita para eliminación
         new_image_filename = current_message.get("imagen")  # Mantener la actual por defecto
 
         if new_image_path is not None:  # Se especificó cambio de imagen

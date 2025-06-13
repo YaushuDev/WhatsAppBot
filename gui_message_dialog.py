@@ -4,15 +4,14 @@ Diálogos de edición de mensajes para el Bot de WhatsApp
 Este módulo implementa los diálogos modales para editar mensajes existentes,
 reutilizando los componentes de entrada de texto e imagen. Proporciona una
 interfaz intuitiva para modificar mensajes con validación y preview en tiempo real.
-ACTUALIZADO: Soporte para cambiar modo de envío conjunto/separado en edición.
-CORREGIDO: Manejo correcto de eliminación de imágenes durante la edición.
+ACTUALIZADO: Validación de restricción del primer mensaje sin imágenes durante la edición.
 """
 
 import tkinter as tk
 import os
 from gui_styles import StyleManager
 from gui_message_input import TextInputComponent, ImagePreviewComponent
-from gui_components import show_validation_error
+from gui_components import show_validation_error, show_first_message_image_restriction
 
 
 class DialogWindowManager:
@@ -336,11 +335,10 @@ class MessageEditDialogContent:
     """
     Contenido principal del diálogo de edición de mensajes
     Reutiliza componentes de entrada y maneja la lógica específica de edición
-    ACTUALIZADO: Incluye selector de modo de envío conjunto/separado
-    CORREGIDO: Manejo correcto de eliminación de imágenes
+    ACTUALIZADO: Incluye selector de modo de envío conjunto/separado y validación de primer mensaje
     """
 
-    def __init__(self, parent, style_manager: StyleManager, message_data, data_manager):
+    def __init__(self, parent, style_manager: StyleManager, message_data, data_manager, message_index=None):
         """
         Inicializa el contenido del diálogo de edición
 
@@ -349,11 +347,13 @@ class MessageEditDialogContent:
             style_manager: Gestor de estilos
             message_data: Datos del mensaje a editar
             data_manager: Gestor de datos para manejo de imágenes
+            message_index: Índice del mensaje (NUEVO: para validación del primer mensaje)
         """
         self.style_manager = style_manager
         self.data_manager = data_manager
         self.message_data = message_data
         self.original_image_filename = message_data.get('imagen')
+        self.message_index = message_index  # NUEVO: Guardar índice del mensaje
 
         # Crear contenido
         self._create_dialog_content(parent)
@@ -385,14 +385,28 @@ class MessageEditDialogContent:
 
     def _create_title_section(self):
         """
-        Crea la sección del título del diálogo
+        Crea la sección del título del diálogo con información del mensaje
         """
+        title_text = "Editar Mensaje"
+        if self.message_index is not None:
+            title_text += f" #{self.message_index + 1}"
+
         title_label = self.style_manager.create_styled_label(
             self.main_frame,
-            "Editar Mensaje",
+            title_text,
             "heading"
         )
         title_label.pack(pady=(0, 20))
+
+        # NUEVO: Advertencia para primer mensaje
+        if self.message_index == 0:
+            warning_label = self.style_manager.create_styled_label(
+                self.main_frame,
+                "⚠️ Primer mensaje: las imágenes no están permitidas",
+                "small"
+            )
+            warning_label.configure(fg=self.style_manager.colors["warning"])
+            warning_label.pack(pady=(0, 10))
 
     def _create_text_section(self):
         """
@@ -480,6 +494,10 @@ class MessageEditDialogContent:
         # Personalizar botones para el contexto de edición
         self._customize_image_buttons()
 
+        # NUEVO: Deshabilitar componente de imagen si es el primer mensaje
+        if self.message_index == 0:
+            self._disable_image_component()
+
     def _customize_image_buttons(self):
         """
         Personaliza los botones de imagen para el contexto de edición
@@ -490,6 +508,26 @@ class MessageEditDialogContent:
             text="🗑️ Eliminar",
             fg=self.style_manager.colors["text_primary"]  # Mantener texto blanco en botón rojo
         )
+
+    def _disable_image_component(self):
+        """
+        NUEVO: Deshabilita el componente de imagen para el primer mensaje
+        """
+        self.image_component.select_btn.configure(state="disabled")
+        if hasattr(self.image_component, 'clear_btn'):
+            self.image_component.clear_btn.configure(state="disabled")
+
+        # Cambiar el texto del label de imagen para indicar la restricción
+        for widget in self.image_component.image_frame.winfo_children():
+            for subwidget in widget.winfo_children():
+                if hasattr(subwidget, 'cget') and hasattr(subwidget, 'configure'):
+                    try:
+                        text = subwidget.cget('text')
+                        if 'Imagen:' in text:
+                            subwidget.configure(text="Imagen: (No permitida en primer mensaje)")
+                            break
+                    except:
+                        continue
 
     def _create_send_mode_selector(self):
         """
@@ -507,8 +545,9 @@ class MessageEditDialogContent:
         # Callback para cambios en texto
         self.text_component.set_on_text_change_callback(self._update_send_mode_visibility)
 
-        # Callback para cambios en imagen
-        self.image_component.set_on_image_change_callback(self._update_send_mode_visibility)
+        # Callback para cambios en imagen (solo si no es primer mensaje)
+        if self.message_index != 0:
+            self.image_component.set_on_image_change_callback(self._update_send_mode_visibility)
 
         # Actualizar visibilidad inicial (se hará después de cargar datos)
 
@@ -519,19 +558,24 @@ class MessageEditDialogContent:
         has_text = not self.text_component.is_empty()
         has_image = self.image_component.get_image_path() is not None
 
-        self.send_mode_selector.update_visibility(has_text, has_image)
+        # Solo mostrar selector si no es el primer mensaje
+        if self.message_index != 0:
+            self.send_mode_selector.update_visibility(has_text, has_image)
+        else:
+            self.send_mode_selector.update_visibility(False, False)  # Siempre ocultar para primer mensaje
 
     def _load_existing_data(self):
         """
         Carga los datos existentes del mensaje en los componentes
-        ACTUALIZADO: Incluye carga del modo de envío
+        ACTUALIZADO: Incluye carga del modo de envío y manejo especial para primer mensaje
         """
         # Cargar texto
         existing_text = self.message_data.get('texto', '')
         self.text_component.set_text(existing_text)
 
-        # Cargar imagen si existe
-        self._load_existing_image()
+        # Cargar imagen si existe y no es primer mensaje
+        if self.message_index != 0:
+            self._load_existing_image()
 
         # NUEVO: Cargar modo de envío
         envio_conjunto = self.message_data.get('envio_conjunto', False)
@@ -555,7 +599,7 @@ class MessageEditDialogContent:
     def get_edited_data(self):
         """
         CORREGIDO: Obtiene los datos editados del mensaje con manejo correcto de eliminación de imágenes
-        ACTUALIZADO: Incluye el modo de envío
+        ACTUALIZADO: Incluye el modo de envío y validación especial para primer mensaje
 
         Returns:
             dict: Diccionario con los datos editados
@@ -563,6 +607,11 @@ class MessageEditDialogContent:
         text = self.text_component.get_text()
         new_image_path = self.image_component.get_image_path()
         envio_conjunto = self.send_mode_selector.get_envio_conjunto()
+
+        # NUEVO: Para primer mensaje, forzar que no haya imagen
+        if self.message_index == 0:
+            new_image_path = None
+            envio_conjunto = False
 
         # CORREGIDO: Determinar cambios de imagen y manejo correcto de eliminación
         original_image_path = None
@@ -599,13 +648,19 @@ class MessageEditDialogContent:
 
     def validate_data(self):
         """
-        Valida los datos editados
+        ACTUALIZADO: Valida los datos editados incluyendo restricción del primer mensaje
 
         Returns:
             tuple: (is_valid, error_message)
         """
         if self.text_component.is_empty():
             return False, "El texto del mensaje es obligatorio"
+
+        # NUEVO: Validación específica para primer mensaje
+        if self.message_index == 0:
+            current_image = self.image_component.get_image_path()
+            if current_image:
+                return False, "El primer mensaje no puede tener imagen"
 
         return True, ""
 
@@ -623,7 +678,7 @@ class MessageEditDialog:
     """
     Diálogo principal para editar mensajes
     Coordina todos los componentes y maneja el flujo de edición
-    ACTUALIZADO: Soporte completo para edición de modo de envío conjunto/separado
+    ACTUALIZADO: Soporte completo para edición de modo de envío conjunto/separado y validación de primer mensaje
     """
 
     def __init__(self, parent, style_manager: StyleManager, message_data, data_manager, callback):
@@ -642,11 +697,34 @@ class MessageEditDialog:
         self.callback = callback
         self.result = None
 
+        # NUEVO: Determinar índice del mensaje (requiere obtenerlo del contexto)
+        self.message_index = self._determine_message_index(message_data)
+
         # Crear componentes del diálogo
         self._create_dialog_components(parent, message_data)
 
         # Configurar eventos
         self._setup_dialog_events()
+
+    def _determine_message_index(self, message_data):
+        """
+        NUEVO: Determina el índice del mensaje que se está editando
+
+        Args:
+            message_data: Datos del mensaje
+
+        Returns:
+            int: Índice del mensaje o None si no se puede determinar
+        """
+        try:
+            messages = self.data_manager.get_messages()
+            for i, msg in enumerate(messages):
+                if (msg.get('texto') == message_data.get('texto') and
+                        msg.get('imagen') == message_data.get('imagen')):
+                    return i
+            return None
+        except:
+            return None
 
     def _create_dialog_components(self, parent, message_data):
         """
@@ -664,12 +742,13 @@ class MessageEditDialog:
             "600x750"  # Aumentado de 700 a 750 para el selector
         )
 
-        # Contenido del diálogo
+        # Contenido del diálogo (NUEVO: pasar índice del mensaje)
         self.content = MessageEditDialogContent(
             self.window_manager.get_dialog(),
             self.style_manager,
             message_data,
-            self.data_manager
+            self.data_manager,
+            self.message_index  # NUEVO: Pasar índice del mensaje
         )
 
         # Botones de acción
@@ -689,20 +768,35 @@ class MessageEditDialog:
 
     def _save_changes(self):
         """
-        Guarda los cambios y cierra el diálogo
-        ACTUALIZADO: Incluye validación y manejo del modo de envío
+        ACTUALIZADO: Guarda los cambios con validación de restricción del primer mensaje
+
+        Args:
+            Valida antes de guardar y maneja la restricción del primer mensaje
         """
-        # Validar datos
+        # Validar datos (incluye validación del primer mensaje)
         is_valid, error_message = self.content.validate_data()
         if not is_valid:
-            show_validation_error(error_message)
+            if "primer mensaje" in error_message.lower():
+                show_first_message_image_restriction()
+            else:
+                show_validation_error(error_message)
             return
+
+        # NUEVO: Validación adicional para primer mensaje
+        if self.message_index == 0:
+            edited_data = self.content.get_edited_data()
+            is_adding_image = edited_data.get('imagen_cambio', False) and edited_data.get('nueva_imagen') not in [None,
+                                                                                                                  ""]
+
+            if is_adding_image:
+                show_first_message_image_restriction()
+                return
 
         # Obtener datos editados (ahora incluye envio_conjunto)
         self.result = self.content.get_edited_data()
 
         # NUEVO: Mostrar información del modo de envío si cambió
-        if 'envio_conjunto' in self.result:
+        if 'envio_conjunto' in self.result and self.message_index != 0:
             envio_conjunto = self.result['envio_conjunto']
             has_image = self.content.image_component.get_image_path() is not None
             has_text = not self.content.text_component.is_empty()

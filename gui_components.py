@@ -40,6 +40,26 @@ from gui_advanced_components import (
     ExcelUploadComponent
 )
 
+
+# NUEVO: Función específica para restricción del primer mensaje
+def show_first_message_image_restriction():
+    """
+    Muestra un mensaje de advertencia sobre la restricción de imagen en el primer mensaje
+
+    Returns:
+        None - Solo muestra el mensaje informativo
+    """
+    from tkinter import messagebox
+
+    message = (
+        "❌ Primer mensaje: solo texto permitido\n\n"
+        "WhatsApp Web tiene un error al inicio que envía la primera imagen como \"Ver una vez\".\n\n"
+        "Use texto para el primer mensaje."
+    )
+
+    messagebox.showwarning("⚠️ Restricción de Imagen", message)
+
+
 # Exportar todo para mantener compatibilidad
 __all__ = [
     # Navegación
@@ -68,5 +88,6 @@ __all__ = [
     'show_validation_error',
     'show_success_message',
     'show_error_message',
-    'show_confirmation_dialog'
+    'show_confirmation_dialog',
+    'show_first_message_image_restriction',  # NUEVO
 ]
