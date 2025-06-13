@@ -3,8 +3,9 @@
 Sistema de automatización para el Bot de WhatsApp
 Este módulo controla el flujo completo de automatización del envío de mensajes,
 incluyendo el sistema secuencial de mensajes, manejo de intervalos, control de
-inicio/parada, estadísticas en tiempo real, tracking de números fallidos y
-personalización automática de mensajes con placeholders como [nombre] para cada contacto.
+inicio/parada, estadísticas en tiempo real, tracking de números fallidos,
+personalización automática de mensajes con placeholders como [nombre] para cada contacto
+y gestión inteligente de instancias de navegador para evitar conflictos.
 """
 
 import time
@@ -256,9 +257,83 @@ class ContactDataExtractor:
             }
 
 
+class BrowserInstanceManager:
+    """
+    NUEVO: Gestor de instancias de navegador para reutilización y resolución de conflictos
+    """
+
+    def __init__(self):
+        self._shared_driver_manager = None
+        self._browser_should_stay_open = False
+        self._instance_lock = threading.Lock()
+
+    def get_or_create_driver_manager(self, status_callback: Optional[Callable] = None) -> ChromeDriverManager:
+        """
+        Obtiene una instancia existente o crea una nueva del driver manager
+
+        Args:
+            status_callback: Callback para reportar estado
+
+        Returns:
+            Instancia del ChromeDriverManager
+        """
+        with self._instance_lock:
+            # Si hay una instancia compartida activa, reutilizarla
+            if self._shared_driver_manager and self._shared_driver_manager.is_session_alive():
+                if status_callback:
+                    status_callback("🔄 Reutilizando navegador existente...")
+                return self._shared_driver_manager
+
+            # Si la instancia anterior no está activa, crear nueva
+            if status_callback:
+                status_callback("🚀 Creando nueva instancia de navegador...")
+
+            self._shared_driver_manager = ChromeDriverManager(status_callback)
+            return self._shared_driver_manager
+
+    def should_keep_browser_open(self, keep_open: bool):
+        """
+        Establece si el navegador debe mantenerse abierto
+
+        Args:
+            keep_open: Si debe mantener el navegador abierto
+        """
+        self._browser_should_stay_open = keep_open
+
+    def cleanup_driver_manager(self, driver_manager: ChromeDriverManager, force_close: bool = False):
+        """
+        Limpia el driver manager según la configuración
+
+        Args:
+            driver_manager: Instancia a limpiar
+            force_close: Si debe forzar el cierre
+        """
+        with self._instance_lock:
+            if force_close or not self._browser_should_stay_open:
+                if driver_manager:
+                    driver_manager.close(cleanup_user_data=not self._browser_should_stay_open)
+
+                # Si es la instancia compartida y se está cerrando, limpiar referencia
+                if driver_manager == self._shared_driver_manager and not self._browser_should_stay_open:
+                    self._shared_driver_manager = None
+
+    def force_cleanup_all(self):
+        """
+        Fuerza la limpieza de todas las instancias
+        """
+        with self._instance_lock:
+            if self._shared_driver_manager:
+                self._shared_driver_manager.force_cleanup()
+                self._shared_driver_manager = None
+
+
+# Instancia global del gestor de navegador
+_browser_instance_manager = BrowserInstanceManager()
+
+
 class AutomationController:
     """
-    Controlador principal de automatización
+    Controlador principal de automatización con gestión inteligente de instancias de navegador
     """
 
     def __init__(self, status_callback: Optional[Callable] = None):
@@ -272,7 +347,7 @@ class AutomationController:
         self.is_running = False
         self._stop_requested = False
 
-        # Componentes principales
+        # Componentes principales (MEJORADO: usar gestor de instancias)
         self.driver_manager = None
         self.session_manager = None
         self.contact_manager = None
@@ -300,21 +375,35 @@ class AutomationController:
 
     def _initialize_components(self) -> bool:
         """
-        Inicializa todos los componentes necesarios
+        MEJORADO: Inicializa todos los componentes necesarios con gestión de instancias
 
         Returns:
             True si se inicializaron correctamente
         """
         try:
-            # Driver manager
-            self.driver_manager = ChromeDriverManager(self.status_callback)
-            if not self.driver_manager.initialize_driver():
-                return False
+            # MEJORADO: Usar gestor de instancias de navegador
+            self.driver_manager = _browser_instance_manager.get_or_create_driver_manager(self.status_callback)
+
+            # Solo inicializar el driver si no está ya inicializado
+            if not self.driver_manager.is_session_alive():
+                if not self.driver_manager.initialize_driver():
+                    return False
+            else:
+                self._update_status("✅ Navegador ya inicializado, reutilizando...")
 
             # Session manager
             self.session_manager = WhatsAppSession(self.driver_manager, self.status_callback)
-            if not self.session_manager.open_whatsapp_web():
-                return False
+
+            # Verificar si WhatsApp Web ya está abierto
+            current_url = self.driver_manager.get_current_url()
+            if current_url and "web.whatsapp.com" in current_url:
+                self._update_status("🌐 WhatsApp Web ya está abierto, validando sesión...")
+                if not self.session_manager.validate_session():
+                    if not self.session_manager.open_whatsapp_web():
+                        return False
+            else:
+                if not self.session_manager.open_whatsapp_web():
+                    return False
 
             # Contact manager
             self.contact_manager = ContactManager(self.driver_manager, self.status_callback)
@@ -330,27 +419,29 @@ class AutomationController:
 
     def _cleanup_components(self, keep_browser_open: bool = False):
         """
-        ACTUALIZADO: Limpia y cierra todos los componentes con opción de mantener navegador
+        MEJORADO: Limpia y cierra todos los componentes con gestión inteligente de instancias
 
         Args:
             keep_browser_open: Si True, mantiene el navegador abierto
         """
         try:
+            # Configurar el gestor sobre si mantener el navegador abierto
+            _browser_instance_manager.should_keep_browser_open(keep_browser_open)
+
             if self.contact_manager:
                 self.contact_manager.clear_cache()
 
             if self.message_sender:
                 self.message_sender.clear_cache()
 
-            # NUEVO: Opción para mantener navegador abierto
+            # MEJORADO: Usar gestor de instancias para la limpieza
             if self.driver_manager:
                 if keep_browser_open:
                     self._update_status("🌐 Manteniendo navegador abierto como se configuró")
-                    # No cerrar el driver, solo limpiar referencias de componentes
-                    pass
                 else:
                     self._update_status("🔒 Cerrando navegador...")
-                    self.driver_manager.close()
+
+                _browser_instance_manager.cleanup_driver_manager(self.driver_manager)
 
             # Limpiar referencias (excepto driver si se mantiene abierto)
             if not keep_browser_open:
@@ -529,7 +620,7 @@ class AutomationController:
     def start_automation(self, contacts_data: List[Any], messages: List[Dict[str, Any]],
                          min_interval: int, max_interval: int, keep_browser_open: bool = False):
         """
-        ACTUALIZADO: Inicia la automatización completa con opción de mantener navegador abierto
+        MEJORADO: Inicia la automatización completa con gestión inteligente de navegador
 
         Args:
             contacts_data: Lista de contactos (números o contactos completos)
@@ -577,7 +668,7 @@ class AutomationController:
 
             self._update_status(f"🔄 Patrón: Mensaje 1→2→3...→{len(messages)}→1→2... (cíclico)")
 
-            # Inicializar componentes
+            # MEJORADO: Inicializar componentes con gestión de instancias
             if not self._initialize_components():
                 self.is_running = False
                 return
@@ -664,7 +755,7 @@ class AutomationController:
         finally:
             self.is_running = False
             self._stop_requested = False
-            self._cleanup_components(keep_browser_open)  # NUEVO: Pasar opción de mantener navegador
+            self._cleanup_components(keep_browser_open)  # MEJORADO: Gestión inteligente de navegador
 
     def stop_automation(self):
         """
@@ -715,3 +806,15 @@ class AutomationController:
                 'max': self.max_interval
             }
         }
+
+    def force_cleanup_all(self):
+        """
+        NUEVO: Fuerza la limpieza de todas las instancias (para casos de emergencia)
+        """
+        try:
+            self.is_running = False
+            self._stop_requested = True
+            _browser_instance_manager.force_cleanup_all()
+            self._update_status("🧹 Limpieza forzada completada")
+        except Exception as e:
+            self._update_status(f"⚠️ Error en limpieza forzada: {str(e)}")

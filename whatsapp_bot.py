@@ -5,8 +5,8 @@ Este archivo actúa como la interfaz principal del Bot de WhatsApp, proporcionan
 limpia y simple para la GUI mientras coordina todos los módulos especializados. Mantiene
 compatibilidad completa con la interfaz existente, actúa como punto de entrada único
 para todas las operaciones del bot e incluye soporte automático para personalización
-de mensajes con placeholders como [nombre] que se reemplazan dinámicamente, y
-configuración del navegador.
+de mensajes con placeholders como [nombre] que se reemplazan dinámicamente, configuración
+del navegador y gestión inteligente de instancias para evitar conflictos.
 """
 
 import threading
@@ -22,7 +22,8 @@ class WhatsAppBot:
     """
     Clase principal del Bot de WhatsApp que actúa como interfaz pública
     Coordina todos los módulos especializados y proporciona una API simple para la GUI
-    con soporte automático para personalización de mensajes y configuración del navegador
+    con soporte automático para personalización de mensajes, configuración del navegador
+    y gestión inteligente de instancias de navegador para evitar conflictos
     """
 
     def __init__(self, status_callback: Optional[Callable] = None):
@@ -46,6 +47,9 @@ class WhatsAppBot:
         # Threading para automatización
         self._automation_thread = None
 
+        # NUEVO: Control de estado para evitar conflictos
+        self._is_standalone_mode = False
+
     def _update_status(self, message: str):
         """
         Actualiza el estado y notifica a la GUI
@@ -59,21 +63,41 @@ class WhatsAppBot:
 
     def _initialize_standalone_components(self) -> bool:
         """
-        Inicializa componentes para uso individual (no automatización)
+        MEJORADO: Inicializa componentes para uso individual con gestión de conflictos
 
         Returns:
             True si se inicializaron correctamente
         """
         try:
+            # Verificar si hay automatización activa
+            if self.automation_controller.is_active():
+                self._update_status("⚠️ No se puede usar modo standalone mientras hay automatización activa")
+                return False
+
+            # Marcar modo standalone
+            self._is_standalone_mode = True
+
             if not self._standalone_driver:
                 self._standalone_driver = ChromeDriverManager(self.status_callback)
                 if not self._standalone_driver.initialize_driver():
+                    self._is_standalone_mode = False
                     return False
 
             if not self._standalone_session:
                 self._standalone_session = WhatsAppSession(self._standalone_driver, self.status_callback)
-                if not self._standalone_session.open_whatsapp_web():
-                    return False
+
+                # Verificar si WhatsApp Web ya está abierto
+                current_url = self._standalone_driver.get_current_url()
+                if current_url and "web.whatsapp.com" in current_url:
+                    self._update_status("🌐 WhatsApp Web ya está abierto, validando sesión...")
+                    if not self._standalone_session.validate_session():
+                        if not self._standalone_session.open_whatsapp_web():
+                            self._is_standalone_mode = False
+                            return False
+                else:
+                    if not self._standalone_session.open_whatsapp_web():
+                        self._is_standalone_mode = False
+                        return False
 
             if not self._standalone_contacts:
                 self._standalone_contacts = ContactManager(self._standalone_driver, self.status_callback)
@@ -85,13 +109,17 @@ class WhatsAppBot:
 
         except Exception as e:
             self._update_status(f"Error inicializando componentes: {str(e)}")
+            self._is_standalone_mode = False
             return False
 
     def _cleanup_standalone_components(self):
         """
-        Limpia los componentes standalone
+        MEJORADO: Limpia los componentes standalone con gestión inteligente
+
         """
         try:
+            self._is_standalone_mode = False
+
             if self._standalone_contacts:
                 self._standalone_contacts.clear_cache()
 
@@ -99,13 +127,18 @@ class WhatsAppBot:
                 self._standalone_messaging.clear_cache()
 
             if self._standalone_driver:
-                self._standalone_driver.close()
+                # Solo cerrar si no hay automatización que pueda estar usando el navegador
+                if not self.automation_controller.is_active():
+                    self._standalone_driver.close()
+                else:
+                    self._update_status("🌐 Manteniendo navegador para automatización activa")
 
-            # Limpiar referencias
-            self._standalone_driver = None
-            self._standalone_session = None
-            self._standalone_contacts = None
-            self._standalone_messaging = None
+            # Limpiar referencias solo si no hay automatización activa
+            if not self.automation_controller.is_active():
+                self._standalone_driver = None
+                self._standalone_session = None
+                self._standalone_contacts = None
+                self._standalone_messaging = None
 
         except Exception as e:
             self._update_status(f"Error en limpieza: {str(e)}")
@@ -181,7 +214,7 @@ class WhatsAppBot:
     def _start_automation_internal(self, phone_numbers: List[str], messages: List[Dict[str, Any]],
                                    min_interval: int, max_interval: int, keep_browser_open: bool = False):
         """
-        NUEVO: Método interno para iniciar automatización con todas las opciones
+        MEJORADO: Método interno para iniciar automatización con gestión de conflictos
 
         Args:
             phone_numbers: Lista de números de teléfono o contactos completos
@@ -193,6 +226,11 @@ class WhatsAppBot:
         if self.is_active():
             self._update_status("⚠️ La automatización ya está en ejecución")
             return
+
+        # NUEVO: Limpiar componentes standalone si están activos
+        if self._is_standalone_mode:
+            self._update_status("🔄 Cerrando modo standalone para automatización...")
+            self._cleanup_standalone_components()
 
         try:
             # Preparar datos de contactos para soporte de personalización
@@ -243,7 +281,7 @@ class WhatsAppBot:
     def send_message_to_contact(self, phone_number: str, message_data: Dict[str, Any],
                                 contact_data: Optional[Dict[str, str]] = None) -> bool:
         """
-        Envía un mensaje a un contacto específico con personalización automática
+        MEJORADO: Envía un mensaje a un contacto específico con gestión de conflictos
 
         Args:
             phone_number: Número de teléfono
@@ -254,6 +292,11 @@ class WhatsAppBot:
             True si se envió correctamente
         """
         try:
+            # Verificar conflictos con automatización
+            if self.automation_controller.is_active():
+                self._update_status("⚠️ No se puede enviar mensaje individual durante automatización")
+                return False
+
             # Inicializar componentes standalone si no están listos
             if not self._initialize_standalone_components():
                 return False
@@ -327,7 +370,7 @@ class WhatsAppBot:
 
     def get_session_info(self) -> Dict[str, Any]:
         """
-        Obtiene información de la sesión actual con estadísticas de personalización
+        MEJORADO: Obtiene información de la sesión actual con gestión de estados
 
         Returns:
             Diccionario con información de la sesión
@@ -353,7 +396,8 @@ class WhatsAppBot:
             'messages_count': 0,
             'current_message_index': 0,
             'personalization_active': False,
-            'personalization_rate': 0
+            'personalization_rate': 0,
+            'standalone_mode': self._is_standalone_mode
         }
 
         if self._standalone_driver:
@@ -424,9 +468,32 @@ class WhatsAppBot:
             self._update_status(f"Error obteniendo placeholders: {str(e)}")
             return ['[nombre]', '[numero]']  # Fallback
 
+    def force_cleanup_all(self):
+        """
+        NUEVO: Fuerza la limpieza de todas las instancias (para casos de emergencia)
+        """
+        try:
+            self._update_status("🧹 Iniciando limpieza forzada de todas las instancias...")
+
+            # Detener automatización si está activa
+            if self.is_active():
+                self.stop_automation()
+
+            # Forzar limpieza del controlador de automatización
+            self.automation_controller.force_cleanup_all()
+
+            # Limpiar componentes standalone
+            self._cleanup_standalone_components()
+
+            self._update_status("✅ Limpieza forzada completada")
+
+        except Exception as e:
+            self._update_status(f"⚠️ Error en limpieza forzada: {str(e)}")
+
     def close(self):
         """
-        Cierra el bot y limpia todos los recursos
+        MEJORADO: Cierra el bot y limpia todos los recursos con gestión inteligente
+
         """
         try:
             # Detener automatización si está activa
@@ -440,19 +507,28 @@ class WhatsAppBot:
             # Limpiar componentes standalone
             self._cleanup_standalone_components()
 
-            self._update_status("Bot cerrado correctamente")
+            # NUEVO: Limpieza adicional de instancias compartidas si es necesario
+            if not self.automation_controller.is_active():
+                self.automation_controller.force_cleanup_all()
+
+            self._update_status("✅ Bot cerrado correctamente")
 
         except Exception as e:
-            self._update_status(f"Error al cerrar bot: {str(e)}")
+            self._update_status(f"⚠️ Error al cerrar bot: {str(e)}")
 
     def refresh_session(self) -> bool:
         """
-        Refresca la sesión actual (para uso standalone)
+        MEJORADO: Refresca la sesión actual con gestión de conflictos
 
         Returns:
             True si el refresco fue exitoso
         """
         try:
+            # No permitir refresh durante automatización
+            if self.automation_controller.is_active():
+                self._update_status("⚠️ No se puede refrescar sesión durante automatización")
+                return False
+
             if self._standalone_session:
                 return self._standalone_session.refresh_session()
             return False
@@ -462,12 +538,18 @@ class WhatsAppBot:
 
     def validate_session(self) -> bool:
         """
-        Valida que la sesión actual sigue activa (para uso standalone)
+        MEJORADO: Valida que la sesión actual sigue activa con gestión de estados
 
         Returns:
             True si la sesión es válida
         """
         try:
+            # Si hay automatización activa, usar su sesión
+            if self.automation_controller.is_active():
+                session_info = self.automation_controller.get_session_info()
+                return session_info.get('session_valid', False)
+
+            # Si no, usar standalone
             if self._standalone_session:
                 return self._standalone_session.validate_session()
             return False
@@ -477,13 +559,20 @@ class WhatsAppBot:
 
     def get_contact_cache_stats(self) -> Dict[str, int]:
         """
-        Obtiene estadísticas del cache de contactos
+        MEJORADO: Obtiene estadísticas del cache de contactos según el estado actual
 
         Returns:
             Diccionario con estadísticas del cache
         """
+        # Intentar obtener estadísticas de automatización si está activa
+        if self.automation_controller.is_active() and hasattr(self.automation_controller, 'contact_manager'):
+            if self.automation_controller.contact_manager:
+                return self.automation_controller.contact_manager.get_cache_stats()
+
+        # Usar standalone si está disponible
         if self._standalone_contacts:
             return self._standalone_contacts.get_cache_stats()
+
         return {
             'total_cached': 0,
             'successful_contacts': 0,
@@ -536,3 +625,31 @@ class WhatsAppBot:
                 'placeholders_found': [],
                 'has_personalization': False
             }
+
+    def get_browser_status(self) -> Dict[str, Any]:
+        """
+        NUEVO: Obtiene información detallada del estado del navegador
+
+        Returns:
+            Información del estado del navegador
+        """
+        status = {
+            'automation_active': self.automation_controller.is_active(),
+            'standalone_active': self._is_standalone_mode,
+            'browser_instances': 0,
+            'user_data_info': None
+        }
+
+        # Información de automatización
+        if self.automation_controller.is_active() and hasattr(self.automation_controller, 'driver_manager'):
+            if self.automation_controller.driver_manager:
+                status['browser_instances'] += 1
+                status['user_data_info'] = self.automation_controller.driver_manager.get_user_data_info()
+
+        # Información standalone
+        if self._standalone_driver:
+            status['browser_instances'] += 1
+            if not status['user_data_info']:
+                status['user_data_info'] = self._standalone_driver.get_user_data_info()
+
+        return status
