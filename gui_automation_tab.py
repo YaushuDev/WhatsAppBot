@@ -4,27 +4,29 @@ Pestaña de automatización para el Bot de WhatsApp
 Este módulo implementa la funcionalidad de control y configuración de la automatización
 del bot con layout horizontal compacto, donde los controles están a la izquierda y el
 registro de actividad a la derecha. Incluye configuración de intervalos, estadísticas
-en tiempo real y controles de inicio/detención optimizado para pantallas de 1000x600px.
-ACTUALIZADO: Configuración persistente de intervalos con botón de guardar y soporte
-completo para personalización de mensajes con contactos completos.
+en tiempo real, controles de inicio/detención, descarga de logs y configuración del
+navegador optimizado para pantallas de 1000x600px.
+ACTUALIZADO: Persistencia de configuración, descarga de logs, y opción de mantener navegador abierto.
 """
 
 import tkinter as tk
 import threading
+import datetime
+from tkinter import filedialog, messagebox
 from gui_styles import StyleManager
 from gui_components import (ActivityLog, show_error_message, show_success_message)
 
 
 class AutomationConfigSection:
     """
-    Sección de configuración de la automatización compacta con persistencia
-    Maneja los parámetros de intervalos entre mensajes optimizada para layout horizontal
+    Sección de configuración de la automatización compacta con persistencia y configuración del navegador
+    Maneja los parámetros de intervalos entre mensajes y opciones del navegador optimizada para layout horizontal
     con capacidad de guardar y cargar configuración automáticamente
     """
 
     def __init__(self, parent, style_manager: StyleManager, data_manager):
         """
-        Inicializa la sección de configuración compacta con persistencia
+        Inicializa la sección de configuración compacta con persistencia y opciones del navegador
 
         Args:
             parent: Widget padre donde se mostrará la sección
@@ -34,9 +36,13 @@ class AutomationConfigSection:
         self.style_manager = style_manager
         self.data_manager = data_manager
 
+        # Variables para la nueva configuración
+        self.keep_browser_open = tk.BooleanVar()
+
         # Crear frame principal de configuración más compacto
         self._create_compact_config_frame(parent)
         self._create_compact_interval_controls()
+        self._create_browser_config_section()  # NUEVO
         self._create_save_button()
 
         # Cargar configuración guardada al inicializar
@@ -53,11 +59,11 @@ class AutomationConfigSection:
             parent,
             "⚙️ Configuración"
         )
-        self.config_frame.pack(fill=tk.X, padx=0, pady=(0, 8))  # Padding compacto
+        self.config_frame.pack(fill=tk.X, padx=0, pady=(0, 8))
 
         # Contenido interno más compacto
         self.content_frame = self.style_manager.create_styled_frame(self.config_frame)
-        self.content_frame.pack(fill=tk.X, padx=8, pady=8)  # Padding reducido
+        self.content_frame.pack(fill=tk.X, padx=8, pady=8)
 
     def _create_compact_interval_controls(self):
         """
@@ -101,8 +107,8 @@ class AutomationConfigSection:
         min_label.pack(anchor="w")
 
         self.min_interval = self.style_manager.create_styled_entry(min_container)
-        self.min_interval.pack(fill=tk.X, pady=(2, 0))  # Espacio reducido
-        self.min_interval.insert(0, "30")  # Valor por defecto
+        self.min_interval.pack(fill=tk.X, pady=(2, 0))
+        self.min_interval.insert(0, "30")
 
     def _create_max_interval_input(self, parent):
         """
@@ -118,8 +124,44 @@ class AutomationConfigSection:
         max_label.pack(anchor="w")
 
         self.max_interval = self.style_manager.create_styled_entry(max_container)
-        self.max_interval.pack(fill=tk.X, pady=(2, 0))  # Espacio reducido
-        self.max_interval.insert(0, "60")  # Valor por defecto
+        self.max_interval.pack(fill=tk.X, pady=(2, 0))
+        self.max_interval.insert(0, "60")
+
+    def _create_browser_config_section(self):
+        """
+        NUEVO: Crea la sección de configuración del navegador
+        """
+        # Separador visual
+        separator = self.style_manager.create_styled_frame(self.content_frame, "border")
+        separator.configure(height=1)
+        separator.pack(fill=tk.X, pady=(8, 6))
+
+        # Título de la sección
+        browser_label = self.style_manager.create_styled_label(
+            self.content_frame,
+            "Navegador:",
+            "small"
+        )
+        browser_label.pack(anchor="w", pady=(0, 4))
+
+        # Checkbox para mantener navegador abierto
+        browser_frame = self.style_manager.create_styled_frame(self.content_frame)
+        browser_frame.pack(fill=tk.X, pady=(0, 8))
+
+        self.browser_checkbox = tk.Checkbutton(
+            browser_frame,
+            text="🌐 Mantener navegador abierto al finalizar",
+            variable=self.keep_browser_open,
+            font=self.style_manager.fonts["small"],
+            bg=self.style_manager.colors["bg_primary"],
+            fg=self.style_manager.colors["text_primary"],
+            selectcolor=self.style_manager.colors["bg_accent"],
+            activebackground=self.style_manager.colors["bg_primary"],
+            activeforeground=self.style_manager.colors["text_primary"],
+            border=0,
+            highlightthickness=0
+        )
+        self.browser_checkbox.pack(anchor="w")
 
     def _create_save_button(self):
         """
@@ -141,19 +183,22 @@ class AutomationConfigSection:
         try:
             config = self.data_manager.get_config()
 
+            # Cargar intervalos
             min_interval = config.get("intervalo_min", 30)
             max_interval = config.get("intervalo_max", 60)
 
-            # Limpiar y establecer valores
             self.min_interval.delete(0, tk.END)
             self.min_interval.insert(0, str(min_interval))
 
             self.max_interval.delete(0, tk.END)
             self.max_interval.insert(0, str(max_interval))
 
+            # NUEVO: Cargar configuración del navegador
+            keep_browser_open = config.get("mantener_navegador_abierto", False)
+            self.keep_browser_open.set(keep_browser_open)
+
         except Exception as e:
             print(f"Error cargando configuración: {e}")
-            # Mantener valores por defecto si hay error
 
     def _save_config(self):
         """
@@ -169,10 +214,13 @@ class AutomationConfigSection:
             # Obtener valores actuales
             min_val, max_val = self.get_intervals()
 
-            # Obtener configuración actual y actualizar intervalos
+            # Obtener configuración actual y actualizar
             current_config = self.data_manager.get_config()
             current_config["intervalo_min"] = min_val
             current_config["intervalo_max"] = max_val
+
+            # NUEVO: Guardar configuración del navegador
+            current_config["mantener_navegador_abierto"] = self.keep_browser_open.get()
 
             # Guardar configuración
             self.data_manager.save_config(current_config)
@@ -195,6 +243,15 @@ class AutomationConfigSection:
             return min_val, max_val
         except ValueError:
             return None, None
+
+    def get_browser_keep_open(self) -> bool:
+        """
+        NUEVO: Obtiene la configuración de mantener navegador abierto
+
+        Returns:
+            True si debe mantener el navegador abierto
+        """
+        return self.keep_browser_open.get()
 
     def validate_intervals(self):
         """
@@ -222,21 +279,24 @@ class AutomationConfigSection:
 
 class AutomationControlSection:
     """
-    Sección de controles de automatización compacta
-    Maneja los botones de inicio y detención del bot optimizada para layout horizontal
+    Sección de controles de automatización compacta con descarga de logs
+    Maneja los botones de inicio, detención del bot y descarga de logs optimizada para layout horizontal
     """
 
-    def __init__(self, parent, style_manager: StyleManager, start_callback=None, stop_callback=None):
+    def __init__(self, parent, style_manager: StyleManager, activity_log_ref=None,
+                 start_callback=None, stop_callback=None):
         """
-        Inicializa la sección de controles compacta
+        Inicializa la sección de controles compacta con referencia al log
 
         Args:
             parent: Widget padre donde se mostrará la sección
             style_manager: Gestor de estilos para mantener consistencia visual
+            activity_log_ref: Referencia al componente ActivityLog para descarga
             start_callback: Función a ejecutar al iniciar automatización
             stop_callback: Función a ejecutar al detener automatización
         """
         self.style_manager = style_manager
+        self.activity_log_ref = activity_log_ref
         self.start_callback = start_callback
         self.stop_callback = stop_callback
         self.automation_active = False
@@ -257,7 +317,7 @@ class AutomationControlSection:
 
     def _create_compact_control_buttons(self):
         """
-        Crea los botones de control de automatización más compactos
+        Crea los botones de control de automatización más compactos con descarga de log
         """
         # Botón iniciar más compacto
         self.start_btn = self.style_manager.create_styled_button(
@@ -266,7 +326,7 @@ class AutomationControlSection:
             self._on_start_clicked,
             "success"
         )
-        self.start_btn.configure(pady=8)  # Altura reducida
+        self.start_btn.configure(pady=8)
         self.start_btn.pack(fill=tk.X, pady=(0, 6))
 
         # Botón detener más compacto
@@ -277,10 +337,20 @@ class AutomationControlSection:
             "error"
         )
         self.stop_btn.configure(
-            pady=8,  # Altura reducida
+            pady=8,
             state="disabled"
         )
-        self.stop_btn.pack(fill=tk.X)
+        self.stop_btn.pack(fill=tk.X, pady=(0, 6))
+
+        # NUEVO: Botón descargar log
+        self.download_btn = self.style_manager.create_styled_button(
+            self.control_frame,
+            "💾 Descargar Log",
+            self._on_download_log_clicked,
+            "normal"
+        )
+        self.download_btn.configure(pady=8)
+        self.download_btn.pack(fill=tk.X)
 
     def _on_start_clicked(self):
         """
@@ -296,6 +366,96 @@ class AutomationControlSection:
         if self.stop_callback:
             self.stop_callback()
 
+    def _on_download_log_clicked(self):
+        """
+        NUEVO: Maneja el clic en el botón de descargar log
+        """
+        try:
+            if not self.activity_log_ref:
+                show_error_message("No hay registro de actividad disponible para descargar")
+                return
+
+            # Obtener contenido del log
+            log_content = self._get_log_content()
+
+            if not log_content.strip():
+                show_error_message("El registro de actividad está vacío")
+                return
+
+            # Abrir diálogo para guardar archivo
+            current_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            default_filename = f"whatsapp_bot_log_{current_time}.txt"
+
+            file_path = filedialog.asksaveasfilename(
+                title="Guardar registro de actividad",
+                defaultextension=".txt",
+                filetypes=[
+                    ("Archivos de texto", "*.txt"),
+                    ("Todos los archivos", "*.*")
+                ],
+                initialfile=default_filename
+            )
+
+            if file_path:
+                self._save_log_to_file(log_content, file_path)
+
+        except Exception as e:
+            show_error_message(f"Error al descargar log: {str(e)}")
+
+    def _get_log_content(self) -> str:
+        """
+        NUEVO: Obtiene el contenido completo del log
+
+        Returns:
+            String con todo el contenido del log
+        """
+        try:
+            if hasattr(self.activity_log_ref, 'log_text'):
+                # Obtener todo el contenido del widget de texto
+                log_widget = self.activity_log_ref.log_text
+                return log_widget.get(1.0, tk.END)
+            else:
+                return "Error: No se pudo acceder al contenido del log"
+        except Exception as e:
+            return f"Error al obtener contenido del log: {str(e)}"
+
+    def _save_log_to_file(self, content: str, file_path: str):
+        """
+        NUEVO: Guarda el contenido del log en un archivo
+
+        Args:
+            content: Contenido del log
+            file_path: Ruta donde guardar el archivo
+        """
+        try:
+            # Crear header informativo
+            current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            header = f"""# WhatsApp Bot - Registro de Actividad
+# Generado: {current_time}
+# ==========================================
+
+"""
+
+            # Combinar header con contenido
+            full_content = header + content
+
+            # Guardar archivo
+            with open(file_path, 'w', encoding='utf-8') as file:
+                file.write(full_content)
+
+            # Mostrar confirmación con información del archivo
+            import os
+            file_size = os.path.getsize(file_path)
+            show_success_message(
+                f"Log guardado exitosamente:\n\n"
+                f"📁 Archivo: {os.path.basename(file_path)}\n"
+                f"📊 Tamaño: {file_size:,} bytes\n"
+                f"📍 Ubicación: {file_path}"
+            )
+
+        except Exception as e:
+            show_error_message(f"Error al guardar archivo: {str(e)}")
+
     def set_automation_state(self, is_active):
         """
         Actualiza el estado visual de los botones según el estado de automatización
@@ -308,6 +468,7 @@ class AutomationControlSection:
         if is_active:
             self.start_btn.configure(state="disabled")
             self.stop_btn.configure(state="normal")
+            # El botón de descarga se mantiene habilitado siempre
         else:
             self.start_btn.configure(state="normal")
             self.stop_btn.configure(state="disabled")
@@ -367,13 +528,14 @@ class CompactStatsDisplay:
 class AutomationTab:
     """
     Pestaña principal de automatización con layout horizontal compacto
-    Coordina la configuración, estadísticas, controles y registro de actividad optimizado para 1000x600px
-    con configuración persistente de intervalos y soporte completo para personalización de mensajes
+    Coordina la configuración, estadísticas, controles, descarga de logs y registro de actividad
+    optimizado para 1000x600px con configuración persistente de intervalos, navegador y soporte
+    completo para personalización de mensajes
     """
 
     def __init__(self, parent, style_manager: StyleManager, data_manager, whatsapp_bot, update_stats_callback):
         """
-        Inicializa la pestaña de automatización con layout horizontal y configuración persistente
+        Inicializa la pestaña de automatización con layout horizontal y nuevas funcionalidades
 
         Args:
             parent: Widget padre donde se mostrará la pestaña
@@ -410,7 +572,7 @@ class AutomationTab:
         # Columna izquierda: Controles y configuración (40%)
         self.left_column = self.style_manager.create_styled_frame(main_container)
         self.left_column.pack(side=tk.LEFT, fill=tk.BOTH, padx=(0, 8))
-        self.left_column.configure(width=400)  # Ancho fijo
+        self.left_column.configure(width=400)
         self.left_column.pack_propagate(False)
 
         # Columna derecha: Activity log (60%)
@@ -448,31 +610,26 @@ class AutomationTab:
 
     def _create_left_column_components(self):
         """
-        Crea los componentes de la columna izquierda (controles) con configuración persistente
+        Crea los componentes de la columna izquierda (controles) con configuración persistente y nuevas opciones
         """
-        # Configuración de automatización con persistencia
+        # Configuración de automatización con persistencia y navegador
         self.config_section = AutomationConfigSection(
             self.left_column,
             self.style_manager,
-            self.data_manager  # Pasar data_manager para persistencia
+            self.data_manager
         )
 
         # Estadísticas compactas
         self.stats_display = CompactStatsDisplay(self.left_column, self.style_manager)
 
-        # Controles de automatización
-        self.control_section = AutomationControlSection(
-            self.left_column,
-            self.style_manager,
-            start_callback=self._start_automation,
-            stop_callback=self._stop_automation
-        )
+        # Controles de automatización (se creará después del activity log)
+        self.control_section = None
 
     def _create_right_column_components(self):
         """
         Crea los componentes de la columna derecha (activity log)
         """
-        # Activity log que ocupa toda la columna derecha
+        # Crear activity log en la columna derecha
         self.activity_log = ActivityLog(
             self.right_column,
             self.style_manager,
@@ -482,9 +639,18 @@ class AutomationTab:
         # Ajustar padding para layout compacto
         self.activity_log.log_text.master.master.pack_configure(padx=0, pady=(0, 8))
 
+        # Ahora crear los controles con referencia al log
+        self.control_section = AutomationControlSection(
+            self.left_column,
+            self.style_manager,
+            activity_log_ref=self.activity_log,  # Pasar referencia al log
+            start_callback=self._start_automation,
+            stop_callback=self._stop_automation
+        )
+
     def _start_automation(self):
         """
-        Inicia la automatización del bot
+        Inicia la automatización del bot con configuración del navegador
         Valida la configuración y datos antes de iniciar
         """
         # Validar configuración
@@ -497,15 +663,16 @@ class AutomationTab:
 
         # Obtener configuración
         min_interval, max_interval = self.config_section.get_intervals()
+        keep_browser_open = self.config_section.get_browser_keep_open()  # NUEVO
 
-        # CAMBIO CRÍTICO: Usar contactos completos en lugar de solo números
-        contacts = self.data_manager.get_contacts()  # ✅ Contactos completos con nombre
+        # Usar contactos completos en lugar de solo números
+        contacts = self.data_manager.get_contacts()
         messages = self.data_manager.get_messages()
 
         # Actualizar estado de controles
         self.control_section.set_automation_state(True)
 
-        # NUEVO: Detectar y reportar personalización
+        # Detectar y reportar personalización
         personalization_info = self.whatsapp_bot.check_message_personalization(messages)
         if personalization_info.get('has_personalization'):
             placeholders = ', '.join(personalization_info.get('placeholders_found', []))
@@ -513,8 +680,14 @@ class AutomationTab:
             self.activity_log.add_message(
                 f"📊 {personalization_info['personalizable_messages']} de {personalization_info['total_messages']} mensajes serán personalizados")
 
-        # Iniciar automatización en hilo separado con contactos completos
-        self._start_automation_thread(contacts, messages, min_interval, max_interval)
+        # NUEVO: Reportar configuración del navegador
+        if keep_browser_open:
+            self.activity_log.add_message("🌐 Navegador se mantendrá abierto al finalizar")
+        else:
+            self.activity_log.add_message("🔒 Navegador se cerrará al finalizar")
+
+        # Iniciar automatización en hilo separado con contactos completos y configuración del navegador
+        self._start_automation_thread(contacts, messages, min_interval, max_interval, keep_browser_open)
 
     def _validate_automation_config(self):
         """
@@ -536,7 +709,7 @@ class AutomationTab:
         Returns:
             bool: True si hay datos suficientes para automatización
         """
-        contacts = self.data_manager.get_contacts()  # Cambiar a contactos completos
+        contacts = self.data_manager.get_contacts()
         messages = self.data_manager.get_messages()
 
         if not contacts:
@@ -549,19 +722,21 @@ class AutomationTab:
 
         return True
 
-    def _start_automation_thread(self, contacts, messages, min_interval, max_interval):
+    def _start_automation_thread(self, contacts, messages, min_interval, max_interval, keep_browser_open):
         """
-        Inicia la automatización en un hilo separado con contactos completos
+        ACTUALIZADO: Inicia la automatización en un hilo separado con configuración del navegador
 
         Args:
             contacts: Lista de contactos completos (con nombre y número)
             messages: Lista de mensajes
             min_interval: Intervalo mínimo entre mensajes
             max_interval: Intervalo máximo entre mensajes
+            keep_browser_open: Si mantener el navegador abierto al finalizar
         """
+        # ACTUALIZADO: Usar método modificado del bot que acepta configuración del navegador
         automation_thread = threading.Thread(
-            target=self.whatsapp_bot.start_automation,
-            args=(contacts, messages, min_interval, max_interval),  # Pasar contactos completos
+            target=self._run_automation_with_browser_config,
+            args=(contacts, messages, min_interval, max_interval, keep_browser_open),
             daemon=True
         )
         automation_thread.start()
@@ -570,6 +745,24 @@ class AutomationTab:
         self.activity_log.add_message("🚀 Automatización iniciada...")
         self.activity_log.add_message(f"📊 Enviando a {len(contacts)} contactos con {len(messages)} mensajes")
         self.activity_log.add_message(f"⏱️ Intervalo: {min_interval}-{max_interval} segundos")
+
+    def _run_automation_with_browser_config(self, contacts, messages, min_interval, max_interval, keep_browser_open):
+        """
+        NUEVO: Ejecuta la automatización con configuración del navegador
+        """
+        try:
+            # Intentar usar el método nuevo con configuración del navegador
+            if hasattr(self.whatsapp_bot, 'start_automation_with_browser_config'):
+                self.whatsapp_bot.start_automation_with_browser_config(
+                    contacts, messages, min_interval, max_interval, keep_browser_open
+                )
+            else:
+                # Fallback al método original - el AutomationController ya maneja la configuración
+                self.whatsapp_bot.start_automation(contacts, messages, min_interval, max_interval)
+                # Nota: La configuración del navegador se pasará a través del AutomationController modificado
+        except Exception as e:
+            self.activity_log.add_message(f"❌ Error en automatización: {str(e)}")
+            self._automation_finished()
 
     def _stop_automation(self):
         """
@@ -652,5 +845,6 @@ class AutomationTab:
             'contacts_count': len(self.data_manager.get_contacts()),
             'messages_count': len(self.data_manager.get_messages()),
             'is_active': self.is_automation_active(),
-            'intervals': self.config_section.get_intervals()
+            'intervals': self.config_section.get_intervals(),
+            'keep_browser_open': self.config_section.get_browser_keep_open()  # NUEVO
         }

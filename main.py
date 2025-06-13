@@ -2,7 +2,8 @@
 """
 Punto de entrada principal del Bot de WhatsApp
 Este archivo inicializa la aplicación y ejecuta la interfaz gráfica del bot
-que permite automatizar el envío de mensajes a través de WhatsApp Web
+que permite automatizar el envío de mensajes a través de WhatsApp Web con
+funcionalidades de personalización, descarga de logs y configuración del navegador.
 """
 
 import sys

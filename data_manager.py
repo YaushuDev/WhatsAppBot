@@ -3,8 +3,9 @@
 Gestor de datos para el Bot de WhatsApp
 Maneja la persistencia y gestión de contactos (nombre y número) y mensajes con soporte
 para texto e imágenes utilizando archivos JSON para almacenar la información localmente.
-Incluye compatibilidad con formatos anteriores, migración automática de datos y nueva
-funcionalidad para envío conjunto de imagen con texto como caption.
+Incluye compatibilidad con formatos anteriores, migración automática de datos, nueva
+funcionalidad para envío conjunto de imagen con texto como caption y configuración
+de preferencias del navegador.
 """
 
 import json
@@ -16,7 +17,8 @@ from typing import List, Dict, Any, Tuple, Optional
 class DataManager:
     """
     Clase para gestionar la persistencia de datos del bot
-    Maneja contactos con nombre y número, y mensajes con texto, imágenes y opciones de envío
+    Maneja contactos con nombre y número, mensajes con texto, imágenes, opciones de envío
+    y configuraciones de automatización incluyendo preferencias del navegador
     """
 
     def __init__(self):
@@ -55,7 +57,35 @@ class DataManager:
             default_config = {
                 "intervalo_min": 30,
                 "intervalo_max": 60,
-                "activo": False
+                "activo": False,
+                "mantener_navegador_abierto": False  # NUEVO: Configuración del navegador
+            }
+            self._save_json(self.config_file, default_config)
+        else:
+            # NUEVO: Migrar configuración antigua si no tiene la nueva opción
+            self._migrate_config_format()
+
+    def _migrate_config_format(self):
+        """
+        NUEVO: Migra la configuración antigua para incluir la opción del navegador
+        """
+        try:
+            config = self._load_json(self.config_file)
+
+            # Si no tiene la nueva configuración, agregarla
+            if "mantener_navegador_abierto" not in config:
+                config["mantener_navegador_abierto"] = False
+                self._save_json(self.config_file, config)
+                print("Configuración actualizada con opción de navegador")
+
+        except Exception as e:
+            print(f"Error migrando configuración: {e}")
+            # En caso de error, crear configuración por defecto
+            default_config = {
+                "intervalo_min": 30,
+                "intervalo_max": 60,
+                "activo": False,
+                "mantener_navegador_abierto": False
             }
             self._save_json(self.config_file, default_config)
 
@@ -631,7 +661,7 @@ class DataManager:
             return messages[index].copy()
         return None
 
-    # Gestión de configuración (sin cambios)
+    # Gestión de configuración (actualizada con navegador)
     def get_config(self) -> Dict[str, Any]:
         """
         Obtiene la configuración actual
@@ -649,3 +679,25 @@ class DataManager:
             config: Configuración a guardar
         """
         self._save_json(self.config_file, config)
+
+    # NUEVOS: Métodos específicos para configuración del navegador
+    def get_browser_keep_open_setting(self) -> bool:
+        """
+        NUEVO: Obtiene la configuración de mantener navegador abierto
+
+        Returns:
+            True si debe mantener el navegador abierto
+        """
+        config = self.get_config()
+        return config.get("mantener_navegador_abierto", False)
+
+    def set_browser_keep_open_setting(self, keep_open: bool):
+        """
+        NUEVO: Establece la configuración de mantener navegador abierto
+
+        Args:
+            keep_open: True para mantener navegador abierto, False para cerrar
+        """
+        config = self.get_config()
+        config["mantener_navegador_abierto"] = keep_open
+        self.save_config(config)

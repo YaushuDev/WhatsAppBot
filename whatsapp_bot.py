@@ -5,7 +5,8 @@ Este archivo actúa como la interfaz principal del Bot de WhatsApp, proporcionan
 limpia y simple para la GUI mientras coordina todos los módulos especializados. Mantiene
 compatibilidad completa con la interfaz existente, actúa como punto de entrada único
 para todas las operaciones del bot e incluye soporte automático para personalización
-de mensajes con placeholders como [nombre] que se reemplazan dinámicamente.
+de mensajes con placeholders como [nombre] que se reemplazan dinámicamente, y
+configuración del navegador.
 """
 
 import threading
@@ -21,7 +22,7 @@ class WhatsAppBot:
     """
     Clase principal del Bot de WhatsApp que actúa como interfaz pública
     Coordina todos los módulos especializados y proporciona una API simple para la GUI
-    con soporte automático para personalización de mensajes
+    con soporte automático para personalización de mensajes y configuración del navegador
     """
 
     def __init__(self, status_callback: Optional[Callable] = None):
@@ -111,7 +112,7 @@ class WhatsAppBot:
 
     def _prepare_contacts_data(self, contacts_input: Union[List[str], List[Dict[str, str]]]) -> List[Any]:
         """
-        NUEVO: Prepara los datos de contactos para automatización con soporte de personalización
+        Prepara los datos de contactos para automatización con soporte de personalización
 
         Args:
             contacts_input: Lista de números (strings) o lista de contactos completos (dicts)
@@ -153,7 +154,7 @@ class WhatsAppBot:
     def start_automation(self, phone_numbers: List[str], messages: List[Dict[str, Any]],
                          min_interval: int, max_interval: int):
         """
-        Inicia la automatización del envío de mensajes con personalización automática
+        Inicia la automatización del envío de mensajes con personalización automática (método original)
 
         Args:
             phone_numbers: Lista de números de teléfono o contactos completos
@@ -161,15 +162,43 @@ class WhatsAppBot:
             min_interval: Intervalo mínimo entre mensajes (segundos)
             max_interval: Intervalo máximo entre mensajes (segundos)
         """
+        self._start_automation_internal(phone_numbers, messages, min_interval, max_interval, False)
+
+    def start_automation_with_browser_config(self, phone_numbers: List[str], messages: List[Dict[str, Any]],
+                                             min_interval: int, max_interval: int, keep_browser_open: bool = False):
+        """
+        NUEVO: Inicia la automatización con configuración del navegador
+
+        Args:
+            phone_numbers: Lista de números de teléfono o contactos completos
+            messages: Lista de mensajes con formato {'texto': str, 'imagen': str, 'envio_conjunto': bool}
+            min_interval: Intervalo mínimo entre mensajes (segundos)
+            max_interval: Intervalo máximo entre mensajes (segundos)
+            keep_browser_open: Si mantener el navegador abierto al finalizar
+        """
+        self._start_automation_internal(phone_numbers, messages, min_interval, max_interval, keep_browser_open)
+
+    def _start_automation_internal(self, phone_numbers: List[str], messages: List[Dict[str, Any]],
+                                   min_interval: int, max_interval: int, keep_browser_open: bool = False):
+        """
+        NUEVO: Método interno para iniciar automatización con todas las opciones
+
+        Args:
+            phone_numbers: Lista de números de teléfono o contactos completos
+            messages: Lista de mensajes
+            min_interval: Intervalo mínimo entre mensajes
+            max_interval: Intervalo máximo entre mensajes
+            keep_browser_open: Si mantener el navegador abierto al finalizar
+        """
         if self.is_active():
             self._update_status("⚠️ La automatización ya está en ejecución")
             return
 
         try:
-            # NUEVO: Preparar datos de contactos para soporte de personalización
+            # Preparar datos de contactos para soporte de personalización
             prepared_contacts = self._prepare_contacts_data(phone_numbers)
 
-            # NUEVO: Detectar si hay mensajes con personalización
+            # Detectar si hay mensajes con personalización
             personalization_detected = False
             if messages:
                 for message in messages:
@@ -181,10 +210,14 @@ class WhatsAppBot:
             if personalization_detected:
                 self._update_status("👤 Personalización detectada en mensajes - se aplicará automáticamente")
 
+            # NUEVO: Mostrar configuración del navegador
+            if keep_browser_open:
+                self._update_status("🌐 El navegador se mantendrá abierto al finalizar")
+
             # Iniciar automatización en hilo separado
             self._automation_thread = threading.Thread(
                 target=self.automation_controller.start_automation,
-                args=(prepared_contacts, messages, min_interval, max_interval),
+                args=(prepared_contacts, messages, min_interval, max_interval, keep_browser_open),
                 daemon=True
             )
             self._automation_thread.start()
@@ -225,14 +258,14 @@ class WhatsAppBot:
             if not self._initialize_standalone_components():
                 return False
 
-            # NUEVO: Si no se proporcionan datos de contacto, crear datos básicos
+            # Si no se proporcionan datos de contacto, crear datos básicos
             if not contact_data:
                 contact_data = {
                     'nombre': 'Usuario',  # Nombre genérico
                     'numero': phone_number
                 }
 
-            # NUEVO: Detectar si el mensaje será personalizado
+            # Detectar si el mensaje será personalizado
             will_be_personalized = False
             if self._standalone_messaging and message_data.get('texto'):
                 personalizer = self._standalone_messaging.get_personalizer()
@@ -252,7 +285,7 @@ class WhatsAppBot:
                 self._update_status(f"No se pudo abrir conversación con {phone_number}")
                 return False
 
-            # NUEVO: Enviar mensaje con datos de contacto para personalización
+            # Enviar mensaje con datos de contacto para personalización
             if self._standalone_messaging.send_message(message_data, contact_data):
                 if will_be_personalized:
                     self._update_status(
@@ -270,7 +303,7 @@ class WhatsAppBot:
 
     def send_message_to_contact_with_name(self, contact_info: Dict[str, str], message_data: Dict[str, Any]) -> bool:
         """
-        NUEVO: Envía un mensaje a un contacto usando información completa (nombre + número)
+        Envía un mensaje a un contacto usando información completa (nombre + número)
 
         Args:
             contact_info: Diccionario con 'nombre' y 'numero' del contacto
@@ -303,7 +336,7 @@ class WhatsAppBot:
         if self.automation_controller.is_active():
             session_info = self.automation_controller.get_session_info()
 
-            # NUEVO: Agregar información de personalización si está disponible
+            # Agregar información de personalización si está disponible
             stats = session_info.get('stats', {})
             if 'personalized_messages' in stats:
                 session_info['personalization_active'] = stats['personalized_messages'] > 0
@@ -340,7 +373,7 @@ class WhatsAppBot:
         """
         stats = self.automation_controller.get_current_stats()
 
-        # NUEVO: Asegurar que las estadísticas de personalización estén incluidas
+        # Asegurar que las estadísticas de personalización estén incluidas
         if 'personalized_messages' not in stats:
             stats['personalized_messages'] = 0
         if 'personalization_rate' not in stats:
@@ -350,7 +383,7 @@ class WhatsAppBot:
 
     def test_message_personalization(self, message_text: str, contact_data: Dict[str, str]) -> str:
         """
-        NUEVO: Método de prueba para verificar cómo se personalizará un mensaje
+        Método de prueba para verificar cómo se personalizará un mensaje
 
         Args:
             message_text: Texto del mensaje con placeholders
@@ -372,7 +405,7 @@ class WhatsAppBot:
 
     def get_available_placeholders(self) -> List[str]:
         """
-        NUEVO: Obtiene lista de placeholders disponibles para personalización
+        Obtiene lista de placeholders disponibles para personalización
 
         Returns:
             Lista de placeholders soportados
@@ -461,7 +494,7 @@ class WhatsAppBot:
 
     def check_message_personalization(self, messages: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
-        NUEVO: Analiza una lista de mensajes para detectar personalización
+        Analiza una lista de mensajes para detectar personalización
 
         Args:
             messages: Lista de mensajes a analizar
