@@ -5,7 +5,8 @@ Este módulo implementa la funcionalidad de control y configuración de la autom
 del bot con layout horizontal compacto, donde los controles están a la izquierda y el
 registro de actividad a la derecha. Incluye configuración de intervalos, estadísticas
 en tiempo real y controles de inicio/detención optimizado para pantallas de 1000x600px.
-ACTUALIZADO: Configuración persistente de intervalos con botón de guardar.
+ACTUALIZADO: Configuración persistente de intervalos con botón de guardar y soporte
+completo para personalización de mensajes con contactos completos.
 """
 
 import tkinter as tk
@@ -367,7 +368,7 @@ class AutomationTab:
     """
     Pestaña principal de automatización con layout horizontal compacto
     Coordina la configuración, estadísticas, controles y registro de actividad optimizado para 1000x600px
-    con configuración persistente de intervalos
+    con configuración persistente de intervalos y soporte completo para personalización de mensajes
     """
 
     def __init__(self, parent, style_manager: StyleManager, data_manager, whatsapp_bot, update_stats_callback):
@@ -435,7 +436,7 @@ class AutomationTab:
         # Descripción más concisa
         desc_label = self.style_manager.create_styled_label(
             header_container,
-            "Controla la automatización del envío de mensajes",
+            "Controla la automatización del envío de mensajes con personalización automática",
             "secondary"
         )
         desc_label.pack(anchor="w", pady=(4, 0))
@@ -496,14 +497,24 @@ class AutomationTab:
 
         # Obtener configuración
         min_interval, max_interval = self.config_section.get_intervals()
-        numbers = self.data_manager.get_numbers_only()
+
+        # CAMBIO CRÍTICO: Usar contactos completos en lugar de solo números
+        contacts = self.data_manager.get_contacts()  # ✅ Contactos completos con nombre
         messages = self.data_manager.get_messages()
 
         # Actualizar estado de controles
         self.control_section.set_automation_state(True)
 
-        # Iniciar automatización en hilo separado
-        self._start_automation_thread(numbers, messages, min_interval, max_interval)
+        # NUEVO: Detectar y reportar personalización
+        personalization_info = self.whatsapp_bot.check_message_personalization(messages)
+        if personalization_info.get('has_personalization'):
+            placeholders = ', '.join(personalization_info.get('placeholders_found', []))
+            self.activity_log.add_message(f"👤 Personalización detectada: {placeholders}")
+            self.activity_log.add_message(
+                f"📊 {personalization_info['personalizable_messages']} de {personalization_info['total_messages']} mensajes serán personalizados")
+
+        # Iniciar automatización en hilo separado con contactos completos
+        self._start_automation_thread(contacts, messages, min_interval, max_interval)
 
     def _validate_automation_config(self):
         """
@@ -525,10 +536,10 @@ class AutomationTab:
         Returns:
             bool: True si hay datos suficientes para automatización
         """
-        numbers = self.data_manager.get_numbers_only()
+        contacts = self.data_manager.get_contacts()  # Cambiar a contactos completos
         messages = self.data_manager.get_messages()
 
-        if not numbers:
+        if not contacts:
             show_error_message("No hay contactos configurados.\nAgrega contactos en la pestaña 'Contactos'.")
             return False
 
@@ -538,26 +549,26 @@ class AutomationTab:
 
         return True
 
-    def _start_automation_thread(self, numbers, messages, min_interval, max_interval):
+    def _start_automation_thread(self, contacts, messages, min_interval, max_interval):
         """
-        Inicia la automatización en un hilo separado
+        Inicia la automatización en un hilo separado con contactos completos
 
         Args:
-            numbers: Lista de números de contactos
+            contacts: Lista de contactos completos (con nombre y número)
             messages: Lista de mensajes
             min_interval: Intervalo mínimo entre mensajes
             max_interval: Intervalo máximo entre mensajes
         """
         automation_thread = threading.Thread(
             target=self.whatsapp_bot.start_automation,
-            args=(numbers, messages, min_interval, max_interval),
+            args=(contacts, messages, min_interval, max_interval),  # Pasar contactos completos
             daemon=True
         )
         automation_thread.start()
 
         # Mostrar mensaje de inicio
         self.activity_log.add_message("🚀 Automatización iniciada...")
-        self.activity_log.add_message(f"📊 Enviando a {len(numbers)} contactos con {len(messages)} mensajes")
+        self.activity_log.add_message(f"📊 Enviando a {len(contacts)} contactos con {len(messages)} mensajes")
         self.activity_log.add_message(f"⏱️ Intervalo: {min_interval}-{max_interval} segundos")
 
     def _stop_automation(self):

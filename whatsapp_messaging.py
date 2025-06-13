@@ -3,16 +3,87 @@
 Sistema de envío de mensajes para el Bot de WhatsApp
 Este módulo se encarga exclusivamente del envío de todos los tipos de mensajes en WhatsApp Web,
 incluyendo texto simple, texto con emoticones, imágenes, y envío conjunto de imagen con caption.
-Incluye soporte completo para Unicode, múltiples estrategias de envío y validaciones robustas.
+Incluye soporte completo para Unicode, múltiples estrategias de envío, validaciones robustas
+y personalización de mensajes con placeholders dinámicos como [nombre].
 """
 
 import os
 import time
+import re
 from typing import Optional, Callable, Dict, Any
 from selenium.webdriver.common.keys import Keys
 from whatsapp_utils import (WhatsAppConstants, UnicodeHandler, JavaScriptInjector,
                             FileValidator, get_absolute_image_path)
 from whatsapp_driver import ChromeDriverManager
+
+
+class MessagePersonalizer:
+    """
+    Clase especializada para personalizar mensajes con datos de contactos
+    """
+
+    def __init__(self):
+        """
+        Inicializa el personalizador de mensajes
+        """
+        # Patrón para detectar placeholders como [nombre], [numero], etc.
+        self.placeholder_pattern = re.compile(r'\[(\w+)\]', re.IGNORECASE)
+
+    def has_placeholders(self, text: str) -> bool:
+        """
+        Detecta si el texto contiene placeholders
+
+        Args:
+            text: Texto a analizar
+
+        Returns:
+            True si contiene placeholders
+        """
+        if not text:
+            return False
+        return bool(self.placeholder_pattern.search(text))
+
+    def personalize_message(self, text: str, contact_data: Dict[str, str]) -> str:
+        """
+        Personaliza un mensaje reemplazando placeholders con datos del contacto
+
+        Args:
+            text: Texto original con placeholders
+            contact_data: Diccionario con datos del contacto {'nombre': str, 'numero': str}
+
+        Returns:
+            Texto personalizado
+        """
+        if not text or not self.has_placeholders(text):
+            return text
+
+        try:
+            personalized_text = text
+
+            # Reemplazar [nombre] con el nombre del contacto
+            if '[nombre]' in personalized_text.lower():
+                nombre = contact_data.get('nombre', 'Usuario')
+                personalized_text = re.sub(r'\[nombre\]', nombre, personalized_text, flags=re.IGNORECASE)
+
+            # Reemplazar [numero] con el número del contacto (por si se quiere usar en el futuro)
+            if '[numero]' in personalized_text.lower():
+                numero = contact_data.get('numero', '')
+                personalized_text = re.sub(r'\[numero\]', numero, personalized_text, flags=re.IGNORECASE)
+
+            return personalized_text
+
+        except Exception as e:
+            print(f"[Personalizer] Error personalizando mensaje: {e}")
+            return text  # Devolver texto original en caso de error
+
+    def get_available_placeholders(self) -> list:
+        """
+        Obtiene lista de placeholders disponibles
+
+        Returns:
+            Lista de placeholders soportados
+        """
+        return ['[nombre]', '[numero]']
 
 
 class MessageSender:
@@ -31,6 +102,7 @@ class MessageSender:
         self.driver_manager = driver_manager
         self.status_callback = status_callback
         self.file_validator = FileValidator()
+        self.personalizer = MessagePersonalizer()  # NUEVO: Personalizador de mensajes
 
     def _update_status(self, message: str):
         """
@@ -130,12 +202,13 @@ class MessageSender:
             self._update_status(f"Error en método fallback: {str(e)}")
             return False
 
-    def send_text_message(self, message_text: str) -> bool:
+    def send_text_message(self, message_text: str, contact_data: Optional[Dict[str, str]] = None) -> bool:
         """
-        Envía un mensaje de texto con detección inteligente de emoticones
+        Envía un mensaje de texto con detección inteligente de emoticones y personalización
 
         Args:
             message_text: Texto del mensaje a enviar
+            contact_data: Datos del contacto para personalización (opcional)
 
         Returns:
             True si se envió correctamente
@@ -149,13 +222,19 @@ class MessageSender:
                 self._update_status("❌ Sesión no activa")
                 return False
 
+            # NUEVO: Personalizar mensaje si hay datos de contacto
+            final_message = message_text
+            if contact_data and self.personalizer.has_placeholders(message_text):
+                final_message = self.personalizer.personalize_message(message_text, contact_data)
+                self._update_status(f"📝 Mensaje personalizado para {contact_data.get('nombre', 'contacto')}")
+
             # Detección inteligente de emoticones
-            if UnicodeHandler.has_emoji_or_unicode(message_text):
+            if UnicodeHandler.has_emoji_or_unicode(final_message):
                 self._update_status("😀 Detectados emoticones, usando método avanzado...")
-                return self._send_text_with_javascript(message_text)
+                return self._send_text_with_javascript(final_message)
             else:
                 self._update_status("📝 Enviando texto simple...")
-                return self._send_text_fallback(message_text)
+                return self._send_text_fallback(final_message)
 
         except Exception as e:
             self._update_status(f"❌ Error al enviar mensaje de texto: {str(e)}")
@@ -261,18 +340,25 @@ class MessageSender:
             self._update_status(f"Error subiendo imagen: {str(e)}")
             return False
 
-    def _write_caption(self, caption_text: str) -> bool:
+    def _write_caption(self, caption_text: str, contact_data: Optional[Dict[str, str]] = None) -> bool:
         """
-        Escribe un caption para la imagen
+        Escribe un caption para la imagen con personalización
 
         Args:
             caption_text: Texto del caption
+            contact_data: Datos del contacto para personalización (opcional)
 
         Returns:
             True si se escribió correctamente
         """
         try:
             self._update_status("📝 Escribiendo caption...")
+
+            # NUEVO: Personalizar caption si hay datos de contacto
+            final_caption = caption_text
+            if contact_data and self.personalizer.has_placeholders(caption_text):
+                final_caption = self.personalizer.personalize_message(caption_text, contact_data)
+                self._update_status(f"📝 Caption personalizado para {contact_data.get('nombre', 'contacto')}")
 
             # Selectores para el área de caption (XPaths específicos + fallbacks)
             caption_selectors = [
@@ -291,19 +377,19 @@ class MessageSender:
                     time.sleep(0.5)
 
                 # Usar JavaScript para caption con emoticones
-                if UnicodeHandler.has_emoji_or_unicode(caption_text):
+                if UnicodeHandler.has_emoji_or_unicode(final_caption):
                     self._update_status("😀 Caption con emoticones detectado...")
-                    js_script = JavaScriptInjector.create_caption_writer_script(caption_text)
+                    js_script = JavaScriptInjector.create_caption_writer_script(final_caption)
 
                     caption_result = self.driver_manager.execute_script(js_script)
                     if not caption_result:
                         # Fallback: escribir directamente
                         caption_box.clear()
-                        caption_box.send_keys(UnicodeHandler.filter_bmp_characters(caption_text))
+                        caption_box.send_keys(UnicodeHandler.filter_bmp_characters(final_caption))
                 else:
                     # Texto simple
                     caption_box.clear()
-                    caption_box.send_keys(caption_text)
+                    caption_box.send_keys(final_caption)
 
                 time.sleep(WhatsAppConstants.MEDIUM_DELAY)
                 return True
@@ -385,13 +471,15 @@ class MessageSender:
             self._update_status(f"❌ Error al enviar imagen: {str(e)}")
             return False
 
-    def send_image_with_caption(self, image_filename: str, caption_text: str) -> bool:
+    def send_image_with_caption(self, image_filename: str, caption_text: str,
+                                contact_data: Optional[Dict[str, str]] = None) -> bool:
         """
         Envía una imagen con texto como caption en un solo mensaje
 
         Args:
             image_filename: Nombre del archivo de imagen
             caption_text: Texto del caption
+            contact_data: Datos del contacto para personalización (opcional)
 
         Returns:
             True si se envió correctamente
@@ -416,8 +504,8 @@ class MessageSender:
             if not self._upload_image_file(image_path):
                 return False
 
-            # Escribir caption
-            if not self._write_caption(caption_text):
+            # Escribir caption (NUEVO: con personalización)
+            if not self._write_caption(caption_text, contact_data):
                 self._update_status("⚠️ Error con caption, enviando solo imagen...")
 
             # Enviar
@@ -431,12 +519,13 @@ class MessageSender:
             self._update_status(f"❌ Error al enviar imagen con caption: {str(e)}")
             return False
 
-    def send_message(self, message_data: Dict[str, Any]) -> bool:
+    def send_message(self, message_data: Dict[str, Any], contact_data: Optional[Dict[str, str]] = None) -> bool:
         """
-        Envía un mensaje completo (texto y/o imagen) según configuración
+        Envía un mensaje completo (texto y/o imagen) según configuración con personalización
 
         Args:
             message_data: Diccionario con 'texto', 'imagen' y 'envio_conjunto'
+            contact_data: Datos del contacto para personalización (opcional)
 
         Returns:
             True si se envió correctamente
@@ -448,7 +537,7 @@ class MessageSender:
 
             # Compatibilidad con mensajes de texto simple
             if isinstance(message_data, str):
-                return self.send_text_message(message_data)
+                return self.send_text_message(message_data, contact_data)
 
             text = message_data.get('texto', '').strip()
             image_filename = message_data.get('imagen')
@@ -457,7 +546,7 @@ class MessageSender:
             # Envío conjunto: imagen con caption
             if image_filename and text and envio_conjunto:
                 self._update_status("📤 Enviando imagen con caption (modo conjunto)...")
-                return self.send_image_with_caption(image_filename, text)
+                return self.send_image_with_caption(image_filename, text, contact_data)
 
             # Envío separado: imagen primero, luego texto
             elif image_filename and text and not envio_conjunto:
@@ -466,13 +555,13 @@ class MessageSender:
                 # 1. Enviar imagen
                 if not self.send_image_only(image_filename):
                     self._update_status("⚠️ Error enviando imagen, intentando solo con texto...")
-                    return self.send_text_message(text)
+                    return self.send_text_message(text, contact_data)
 
                 # 2. Esperar brevemente
                 time.sleep(WhatsAppConstants.MEDIUM_DELAY)
 
-                # 3. Enviar texto
-                if not self.send_text_message(text):
+                # 3. Enviar texto (NUEVO: con personalización)
+                if not self.send_text_message(text, contact_data):
                     self._update_status("⚠️ Imagen enviada pero falló el texto")
                     return True  # Al menos la imagen se envió
 
@@ -483,9 +572,9 @@ class MessageSender:
             elif image_filename:
                 return self.send_image_only(image_filename)
 
-            # Solo texto
+            # Solo texto (NUEVO: con personalización)
             elif text:
-                return self.send_text_message(text)
+                return self.send_text_message(text, contact_data)
 
             else:
                 self._update_status("❌ Mensaje vacío")
@@ -500,3 +589,12 @@ class MessageSender:
         Limpia el cache del validador de archivos
         """
         self.file_validator.clear_cache()
+
+    def get_personalizer(self) -> MessagePersonalizer:
+        """
+        Obtiene la instancia del personalizador de mensajes
+
+        Returns:
+            Instancia del MessagePersonalizer
+        """
+        return self.personalizer

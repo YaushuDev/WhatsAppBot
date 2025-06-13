@@ -3,7 +3,8 @@
 Sistema de automatización para el Bot de WhatsApp
 Este módulo controla el flujo completo de automatización del envío de mensajes,
 incluyendo el sistema secuencial de mensajes, manejo de intervalos, control de
-inicio/parada, estadísticas en tiempo real y coordinación entre todos los componentes.
+inicio/parada, estadísticas en tiempo real y personalización automática de mensajes
+con placeholders como [nombre] para cada contacto.
 """
 
 import time
@@ -31,6 +32,7 @@ class AutomationStats:
         self.messages_failed = 0
         self.contacts_processed = 0
         self.contacts_failed = 0
+        self.personalized_messages = 0  # NUEVO: Contador de mensajes personalizados
         self.start_time = None
         self.end_time = None
         self.current_contact = None
@@ -49,9 +51,16 @@ class AutomationStats:
         """Finaliza la sesión actual"""
         self.end_time = time.time()
 
-    def record_message_sent(self):
-        """Registra un mensaje enviado exitosamente"""
+    def record_message_sent(self, was_personalized: bool = False):
+        """
+        Registra un mensaje enviado exitosamente
+
+        Args:
+            was_personalized: Si el mensaje fue personalizado
+        """
         self.messages_sent += 1
+        if was_personalized:
+            self.personalized_messages += 1
 
     def record_message_failed(self):
         """Registra un mensaje que falló"""
@@ -82,10 +91,12 @@ class AutomationStats:
             'messages_failed': self.messages_failed,
             'contacts_processed': self.contacts_processed,
             'contacts_failed': self.contacts_failed,
+            'personalized_messages': self.personalized_messages,  # NUEVO
             'total_contacts': self.total_contacts,
             'total_messages': self.total_messages,
             'duration_seconds': duration,
             'success_rate': (self.messages_sent / max(1, self.messages_sent + self.messages_failed)) * 100,
+            'personalization_rate': (self.personalized_messages / max(1, self.messages_sent)) * 100,  # NUEVO
             'current_contact': self.current_contact,
             'current_message_index': self.current_message_index
         }
@@ -135,6 +146,51 @@ class SequentialMessageManager:
         return (self.current_index % self.total_messages, self.total_messages)
 
 
+class ContactDataExtractor:
+    """
+    NUEVA: Clase para extraer y formatear datos de contactos para personalización
+    """
+
+    @staticmethod
+    def extract_contact_data(contact_info: Any) -> Dict[str, str]:
+        """
+        Extrae datos del contacto en formato estándar para personalización
+
+        Args:
+            contact_info: Información del contacto (puede ser dict, string o número)
+
+        Returns:
+            Diccionario con datos del contacto {'nombre': str, 'numero': str}
+        """
+        try:
+            # Si es un diccionario (contacto completo)
+            if isinstance(contact_info, dict):
+                return {
+                    'nombre': contact_info.get('nombre', 'Usuario'),
+                    'numero': contact_info.get('numero', '')
+                }
+
+            # Si es solo un número (string)
+            elif isinstance(contact_info, str):
+                return {
+                    'nombre': 'Usuario',  # Nombre genérico para números sin nombre
+                    'numero': contact_info
+                }
+
+            # Fallback
+            else:
+                return {
+                    'nombre': 'Usuario',
+                    'numero': str(contact_info) if contact_info else ''
+                }
+
+        except Exception:
+            return {
+                'nombre': 'Usuario',
+                'numero': ''
+            }
+
+
 class AutomationController:
     """
     Controlador principal de automatización
@@ -160,6 +216,7 @@ class AutomationController:
         # Gestores especializados
         self.stats = AutomationStats()
         self.message_manager = None
+        self.contact_extractor = ContactDataExtractor()  # NUEVO
 
         # Configuración de automatización
         self.min_interval = 30
@@ -229,18 +286,18 @@ class AutomationController:
         except Exception as e:
             self._update_status(f"⚠️ Error en limpieza: {str(e)}")
 
-    def _validate_automation_data(self, phone_numbers: List[str], messages: List[Dict[str, Any]]) -> bool:
+    def _validate_automation_data(self, contacts_data: List[Any], messages: List[Dict[str, Any]]) -> bool:
         """
         Valida los datos de automatización
 
         Args:
-            phone_numbers: Lista de números
+            contacts_data: Lista de contactos (puede ser números o contactos completos)
             messages: Lista de mensajes
 
         Returns:
             True si los datos son válidos
         """
-        if not phone_numbers:
+        if not contacts_data:
             self._update_status("❌ No hay contactos configurados")
             return False
 
@@ -259,14 +316,15 @@ class AutomationController:
         return True
 
     def _create_message_display_info(self, message_data: Dict[str, Any], cycle_position: int,
-                                     total_messages: int) -> str:
+                                     total_messages: int, contact_data: Dict[str, str]) -> str:
         """
-        Crea información de visualización para un mensaje
+        Crea información de visualización para un mensaje con indicadores de personalización
 
         Args:
             message_data: Datos del mensaje
             cycle_position: Posición en el ciclo
             total_messages: Total de mensajes
+            contact_data: Datos del contacto
 
         Returns:
             String con información formateada del mensaje
@@ -275,12 +333,22 @@ class AutomationController:
         has_image = message_data.get('imagen') is not None
         envio_conjunto = message_data.get('envio_conjunto', False)
 
+        # NUEVO: Verificar si el mensaje será personalizado
+        will_be_personalized = False
+        if self.message_sender and text:
+            personalizer = self.message_sender.get_personalizer()
+            will_be_personalized = personalizer.has_placeholders(text)
+
         # Texto truncado
         display_text = text[:50] + "..." if len(text) > 50 else text
         display_text = f"'{display_text}'" if display_text else "'[sin texto]'"
 
         # Indicadores visuales
         indicators = ""
+
+        # NUEVO: Indicador de personalización
+        if will_be_personalized:
+            indicators += " 👤"  # Indica que será personalizado
 
         # Emoticones
         if UnicodeHandler.has_emoji_or_unicode(text):
@@ -297,18 +365,28 @@ class AutomationController:
 
         return f"[Mensaje {cycle_position}/{total_messages}] {display_text}{indicators}"
 
-    def _send_to_single_contact(self, phone_number: str, message_data: Dict[str, Any]) -> bool:
+    def _send_to_single_contact(self, contact_info: Any, message_data: Dict[str, Any]) -> bool:
         """
-        Envía un mensaje a un contacto específico
+        Envía un mensaje a un contacto específico con personalización automática
 
         Args:
-            phone_number: Número del contacto
+            contact_info: Información del contacto (número o contacto completo)
             message_data: Datos del mensaje
 
         Returns:
             True si se envió correctamente
         """
         try:
+            # NUEVO: Extraer datos del contacto para personalización
+            contact_data = self.contact_extractor.extract_contact_data(contact_info)
+
+            # Obtener número de teléfono para operaciones
+            phone_number = contact_data.get('numero', '')
+            if isinstance(contact_info, str):
+                phone_number = contact_info  # Si contact_info es directamente el número
+            elif isinstance(contact_info, dict):
+                phone_number = contact_info.get('numero', contact_info.get('number', ''))
+
             # Verificar sesión activa
             if not self.session_manager.validate_session():
                 self._update_status("❌ Sesión perdida, intentando reconectar...")
@@ -320,16 +398,26 @@ class AutomationController:
                 self._update_status(f"❌ No se pudo abrir conversación con {phone_number}")
                 return False
 
-            # Enviar mensaje
-            if self.message_sender.send_message(message_data):
-                self._update_status(f"✅ Mensaje enviado correctamente a {phone_number}")
+            # NUEVO: Enviar mensaje con datos de contacto para personalización
+            if self.message_sender.send_message(message_data, contact_data):
+                # Verificar si se personalizó el mensaje
+                was_personalized = False
+                if self.message_sender and message_data.get('texto'):
+                    personalizer = self.message_sender.get_personalizer()
+                    was_personalized = personalizer.has_placeholders(message_data.get('texto', ''))
+
+                if was_personalized:
+                    self._update_status(f"✅ Mensaje personalizado enviado a {contact_data.get('nombre', phone_number)}")
+                else:
+                    self._update_status(f"✅ Mensaje enviado correctamente a {phone_number}")
+
                 return True
             else:
                 self._update_status(f"❌ Error al enviar mensaje a {phone_number}")
                 return False
 
         except Exception as e:
-            self._update_status(f"❌ Error procesando contacto {phone_number}: {str(e)}")
+            self._update_status(f"❌ Error procesando contacto: {str(e)}")
             return False
 
     def _wait_between_messages(self, current_index: int, total_contacts: int):
@@ -349,13 +437,13 @@ class AutomationController:
                     break
                 time.sleep(1)
 
-    def start_automation(self, phone_numbers: List[str], messages: List[Dict[str, Any]],
+    def start_automation(self, contacts_data: List[Any], messages: List[Dict[str, Any]],
                          min_interval: int, max_interval: int):
         """
-        Inicia la automatización completa
+        Inicia la automatización completa con soporte para personalización
 
         Args:
-            phone_numbers: Lista de números de teléfono
+            contacts_data: Lista de contactos (números o contactos completos)
             messages: Lista de mensajes
             min_interval: Intervalo mínimo entre mensajes
             max_interval: Intervalo máximo entre mensajes
@@ -372,18 +460,31 @@ class AutomationController:
             self._stop_requested = False
 
             # Validar datos
-            if not self._validate_automation_data(phone_numbers, messages):
+            if not self._validate_automation_data(contacts_data, messages):
                 self.is_running = False
                 return
 
             # Inicializar estadísticas
-            self.stats.start_session(len(phone_numbers), len(messages))
+            self.stats.start_session(len(contacts_data), len(messages))
 
             # Crear gestor de mensajes secuencial
             self.message_manager = SequentialMessageManager(messages)
 
+            # NUEVO: Detectar si hay mensajes con personalización
+            personalizable_messages = 0
+            if self.message_sender:
+                personalizer = self.message_sender.get_personalizer()
+                for msg in messages:
+                    if personalizer.has_placeholders(msg.get('texto', '')):
+                        personalizable_messages += 1
+
             self._update_status("🚀 Iniciando automatización con envío secuencial...")
-            self._update_status(f"📊 {len(phone_numbers)} contactos, {len(messages)} mensajes")
+            self._update_status(f"📊 {len(contacts_data)} contactos, {len(messages)} mensajes")
+
+            # NUEVO: Mostrar información sobre personalización
+            if personalizable_messages > 0:
+                self._update_status(f"👤 {personalizable_messages} mensajes serán personalizados automáticamente")
+
             self._update_status(f"🔄 Patrón: Mensaje 1→2→3...→{len(messages)}→1→2... (cíclico)")
 
             # Inicializar componentes
@@ -392,7 +493,7 @@ class AutomationController:
                 return
 
             # Procesar cada contacto
-            for i, phone_number in enumerate(phone_numbers):
+            for i, contact_info in enumerate(contacts_data):
                 if not self.is_running or self._stop_requested:
                     self._update_status("⏹ Automatización detenida por el usuario")
                     break
@@ -402,29 +503,44 @@ class AutomationController:
                     current_message = self.message_manager.get_next_message()
                     cycle_position, total_msgs = self.message_manager.get_current_position()
 
+                    # Extraer datos del contacto
+                    contact_data = self.contact_extractor.extract_contact_data(contact_info)
+
                     # Actualizar estadísticas
+                    phone_number = contact_data.get('numero', str(contact_info))
                     self.stats.record_contact_processed(phone_number)
                     self.stats.update_message_index(cycle_position)
 
                     # Crear información de display
-                    message_info = self._create_message_display_info(current_message, cycle_position, total_msgs)
+                    message_info = self._create_message_display_info(
+                        current_message, cycle_position, total_msgs, contact_data
+                    )
 
-                    self._update_status(f"📱 ({i + 1}/{len(phone_numbers)}) {message_info} → {phone_number}")
+                    contact_display = contact_data.get('nombre', phone_number)
+                    self._update_status(f"📱 ({i + 1}/{len(contacts_data)}) {message_info} → {contact_display}")
 
-                    # Enviar mensaje
-                    if self._send_to_single_contact(phone_number, current_message):
-                        self.stats.record_message_sent()
+                    # Enviar mensaje con personalización
+                    success = self._send_to_single_contact(contact_info, current_message)
+
+                    if success:
+                        # Verificar si se personalizó
+                        was_personalized = False
+                        if current_message.get('texto') and self.message_sender:
+                            personalizer = self.message_sender.get_personalizer()
+                            was_personalized = personalizer.has_placeholders(current_message.get('texto', ''))
+
+                        self.stats.record_message_sent(was_personalized)
                     else:
                         self.stats.record_message_failed()
                         self.stats.record_contact_failed()
 
                     # Esperar entre mensajes
-                    self._wait_between_messages(i, len(phone_numbers))
+                    self._wait_between_messages(i, len(contacts_data))
 
                 except Exception as e:
                     self.stats.record_message_failed()
                     self.stats.record_contact_failed()
-                    self._update_status(f"❌ Error con contacto {phone_number}: {str(e)}")
+                    self._update_status(f"❌ Error con contacto: {str(e)}")
                     continue
 
             # Finalizar automatización
@@ -436,6 +552,12 @@ class AutomationController:
                     f"✅ Automatización completada: {summary['messages_sent']} enviados, "
                     f"{summary['messages_failed']} fallidos ({summary['success_rate']:.1f}% éxito)"
                 )
+                # NUEVO: Mostrar estadísticas de personalización
+                if summary['personalized_messages'] > 0:
+                    self._update_status(
+                        f"👤 {summary['personalized_messages']} mensajes personalizados "
+                        f"({summary['personalization_rate']:.1f}% del total)"
+                    )
             else:
                 self._update_status(
                     f"⏹ Automatización detenida: {summary['messages_sent']} enviados, "
