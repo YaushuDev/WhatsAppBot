@@ -1,0 +1,1 @@
+pyinstaller --onefile --windowed --icon=icon.ico --add-data "icon.ico:." --name="WhatsAppBot" --noconfirm --clean --hidden-import=pandas --hidden-import=numpy --hidden-import=openpyxl --hidden-import=xlrd --hidden-import=selenium --hidden-import=PIL --collect-all=pandas --collect-all=numpy --collect-all=openpyxl --copy-metadata=pandas main.py
