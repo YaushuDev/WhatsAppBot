@@ -1,20 +1,134 @@
 # whatsapp_utils.py
 """
-Utilidades y funciones compartidas para el Bot de WhatsApp
+Utilidades y funciones compartidas para el Bot de WhatsApp con selectores configurables
 Este módulo centraliza todas las funciones de utilidad comunes utilizadas por los diferentes
 componentes del bot, incluyendo detección de Unicode, validaciones de archivos, manejo de
-JavaScript y configuraciones compartidas para optimizar el rendimiento y mantener consistencia.
+JavaScript y configuraciones dinámicas de selectores CSS/XPath que pueden ser actualizados
+desde la interfaz gráfica para adaptarse a los cambios de WhatsApp Web.
 """
 
 import re
 import os
 import json
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
+
+
+class SelectorsConfig:
+    """
+    Gestor de configuración dinámica de selectores CSS/XPath
+    Permite cargar selectores personalizados desde configuración
+    """
+
+    def __init__(self, config_file: str = "selectores_config.json"):
+        """
+        Inicializa el gestor de selectores configurables
+
+        Args:
+            config_file: Archivo donde se guardan los selectores personalizados
+        """
+        self.config_file = config_file
+        self._custom_selectors = {}
+        self._load_custom_selectors()
+
+    def _load_custom_selectors(self):
+        """
+        Carga los selectores personalizados desde el archivo de configuración
+        """
+        try:
+            if os.path.exists(self.config_file):
+                with open(self.config_file, 'r', encoding='utf-8') as file:
+                    self._custom_selectors = json.load(file)
+                print(f"[SelectorsConfig] Selectores personalizados cargados: {len(self._custom_selectors)} elementos")
+            else:
+                print(f"[SelectorsConfig] No existe configuración personalizada, usando selectores por defecto")
+        except Exception as e:
+            print(f"[SelectorsConfig] Error cargando selectores personalizados: {e}")
+            self._custom_selectors = {}
+
+    def save_custom_selectors(self, selectors: Dict[str, List[str]]) -> bool:
+        """
+        Guarda selectores personalizados en el archivo de configuración
+
+        Args:
+            selectors: Diccionario con selectores a guardar
+
+        Returns:
+            True si se guardó correctamente
+        """
+        try:
+            # Validar que los selectores tengan el formato correcto
+            for key, selector_list in selectors.items():
+                if not isinstance(selector_list, list) or not all(isinstance(s, str) for s in selector_list):
+                    raise ValueError(f"Selector '{key}' debe ser una lista de strings")
+
+            self._custom_selectors.update(selectors)
+
+            with open(self.config_file, 'w', encoding='utf-8') as file:
+                json.dump(self._custom_selectors, file, indent=2, ensure_ascii=False)
+
+            print(f"[SelectorsConfig] Selectores guardados correctamente")
+            return True
+
+        except Exception as e:
+            print(f"[SelectorsConfig] Error guardando selectores: {e}")
+            return False
+
+    def get_selectors(self, selector_key: str, default_selectors: List[str]) -> List[str]:
+        """
+        Obtiene selectores para una clave específica (personalizados o por defecto)
+
+        Args:
+            selector_key: Clave del selector (ej: 'message_box')
+            default_selectors: Selectores por defecto si no hay personalizados
+
+        Returns:
+            Lista de selectores a usar
+        """
+        if selector_key in self._custom_selectors:
+            custom = self._custom_selectors[selector_key]
+            if custom and len(custom) > 0:
+                return custom
+
+        return default_selectors
+
+    def reset_selector(self, selector_key: str) -> bool:
+        """
+        Resetea un selector específico a los valores por defecto
+
+        Args:
+            selector_key: Clave del selector a resetear
+
+        Returns:
+            True si se reseteo correctamente
+        """
+        try:
+            if selector_key in self._custom_selectors:
+                del self._custom_selectors[selector_key]
+
+                with open(self.config_file, 'w', encoding='utf-8') as file:
+                    json.dump(self._custom_selectors, file, indent=2, ensure_ascii=False)
+
+                print(f"[SelectorsConfig] Selector '{selector_key}' reseteado a valores por defecto")
+                return True
+            return True
+
+        except Exception as e:
+            print(f"[SelectorsConfig] Error reseteando selector: {e}")
+            return False
+
+    def get_all_custom_selectors(self) -> Dict[str, List[str]]:
+        """
+        Obtiene todos los selectores personalizados actuales
+
+        Returns:
+            Diccionario con todos los selectores personalizados
+        """
+        return self._custom_selectors.copy()
 
 
 class WhatsAppConstants:
     """
-    Constantes y configuraciones compartidas del bot de WhatsApp
+    Constantes y configuraciones compartidas del bot de WhatsApp con selectores configurables
     """
 
     # Timeouts optimizados
@@ -38,8 +152,8 @@ class WhatsAppConstants:
     WHATSAPP_WEB_URL = "https://web.whatsapp.com"
     WHATSAPP_SEND_URL = "https://web.whatsapp.com/send?phone={}"
 
-    # Selectores CSS/XPath más utilizados
-    SELECTORS = {
+    # Selectores por defecto (pueden ser sobrescritos por configuración)
+    DEFAULT_SELECTORS = {
         'search_box': [
             "div[contenteditable='true'][data-tab='3']",
             "div[role='textbox'][title*='Buscar']",
@@ -70,6 +184,108 @@ class WhatsAppConstants:
             "li[data-testid='mi-attach-image'] input"
         ]
     }
+
+    # Instancia del gestor de selectores configurables
+    _selectors_config = None
+
+    @classmethod
+    def get_selectors_config(cls) -> SelectorsConfig:
+        """
+        Obtiene la instancia del gestor de selectores (singleton)
+
+        Returns:
+            Instancia del SelectorsConfig
+        """
+        if cls._selectors_config is None:
+            cls._selectors_config = SelectorsConfig()
+        return cls._selectors_config
+
+    @classmethod
+    def get_selectors(cls, selector_key: str) -> List[str]:
+        """
+        Obtiene selectores dinámicos para una clave específica
+
+        Args:
+            selector_key: Clave del selector (ej: 'message_box', 'attach_button')
+
+        Returns:
+            Lista de selectores a usar (personalizados o por defecto)
+        """
+        if selector_key not in cls.DEFAULT_SELECTORS:
+            raise ValueError(f"Selector '{selector_key}' no existe en la configuración por defecto")
+
+        config = cls.get_selectors_config()
+        default_selectors = cls.DEFAULT_SELECTORS[selector_key]
+
+        return config.get_selectors(selector_key, default_selectors)
+
+    @classmethod
+    def update_selectors(cls, selectors: Dict[str, List[str]]) -> bool:
+        """
+        Actualiza selectores personalizados
+
+        Args:
+            selectors: Diccionario con selectores a actualizar
+
+        Returns:
+            True si se actualizó correctamente
+        """
+        config = cls.get_selectors_config()
+        return config.save_custom_selectors(selectors)
+
+    @classmethod
+    def reset_selectors(cls, selector_keys: List[str] = None) -> bool:
+        """
+        Resetea selectores a valores por defecto
+
+        Args:
+            selector_keys: Lista de claves a resetear (None para resetear todos)
+
+        Returns:
+            True si se reseteó correctamente
+        """
+        config = cls.get_selectors_config()
+
+        if selector_keys is None:
+            # Resetear todos los selectores
+            try:
+                if os.path.exists(config.config_file):
+                    os.remove(config.config_file)
+                config._custom_selectors = {}
+                print("[WhatsAppConstants] Todos los selectores reseteados a valores por defecto")
+                return True
+            except Exception as e:
+                print(f"[WhatsAppConstants] Error reseteando todos los selectores: {e}")
+                return False
+        else:
+            # Resetear selectores específicos
+            success = True
+            for key in selector_keys:
+                if not config.reset_selector(key):
+                    success = False
+            return success
+
+    @classmethod
+    def get_available_selector_keys(cls) -> List[str]:
+        """
+        Obtiene todas las claves de selectores disponibles
+
+        Returns:
+            Lista de claves de selectores
+        """
+        return list(cls.DEFAULT_SELECTORS.keys())
+
+    # Propiedad para mantener compatibilidad con código existente
+    @property
+    def SELECTORS(self):
+        """
+        Propiedad de compatibilidad que devuelve selectores dinámicos
+        DEPRECATED: Usar get_selectors() en su lugar
+        """
+        return {
+            key: self.get_selectors(key)
+            for key in self.DEFAULT_SELECTORS.keys()
+        }
 
 
 class UnicodeHandler:
@@ -205,14 +421,13 @@ class FileValidator:
 
 class JavaScriptInjector:
     """
-    Generador de scripts JavaScript para el bot
+    Generador de scripts JavaScript para el bot con selectores dinámicos
     """
 
     @staticmethod
     def create_message_sender_script(message_text: str) -> str:
         """
-        Crea script JavaScript mejorado para enviar mensajes con soporte Unicode
-        SOLUCION: Mejorada para evitar doble envío de mensajes con emoticones
+        Crea script JavaScript mejorado para enviar mensajes con selectores dinámicos
 
         Args:
             message_text: Texto del mensaje a enviar
@@ -222,17 +437,26 @@ class JavaScriptInjector:
         """
         escaped_text = UnicodeHandler.escape_unicode_for_js(message_text)
 
+        # Obtener selectores dinámicos para message_box
+        message_selectors = WhatsAppConstants.get_selectors('message_box')
+
+        # Convertir selectores a JavaScript
+        js_selectors = ', '.join([f"'{sel}'" for sel in message_selectors])
+
         return f"""
         function sendMessageOptimized() {{
             try {{
-                // PASO 1: Buscar el campo de mensaje con selectores mejorados
-                const messageBox = document.querySelector('[contenteditable="true"][data-tab="10"]') ||
-                                 document.querySelector('[role="textbox"][title*="mensaje"]') ||
-                                 document.querySelector('[data-testid="conversation-compose-box-input"]') ||
-                                 document.querySelector('div[contenteditable="true"][dir="ltr"]');
+                // PASO 1: Buscar el campo de mensaje con selectores configurables
+                const selectors = [{js_selectors}];
+                let messageBox = null;
+
+                for (const selector of selectors) {{
+                    messageBox = document.querySelector(selector);
+                    if (messageBox) break;
+                }}
 
                 if (!messageBox) {{
-                    console.log("MessageBox no encontrado");
+                    console.log("MessageBox no encontrado con selectores configurados");
                     return false;
                 }}
 
@@ -266,12 +490,14 @@ class JavaScriptInjector:
                 // PASO 5: Esperar breve momento para que aparezca el botón de envío
                 return new Promise(resolve => {{
                     setTimeout(() => {{
-                        // Buscar botón de envío con selectores mejorados
-                        const sendButton = document.querySelector('[data-testid="send"]') ||
-                                         document.querySelector('button[aria-label*="Enviar"]') ||
-                                         document.querySelector('span[data-icon="send"]')?.closest('button') ||
-                                         document.querySelector('div[role="button"][aria-label*="Enviar"]') ||
-                                         document.querySelector('button[aria-label*="Send"]');
+                        // Buscar botón de envío con selectores dinámicos
+                        const sendSelectors = {JavaScriptInjector._get_send_button_selectors_js()};
+                        let sendButton = null;
+
+                        for (const selector of sendSelectors) {{
+                            sendButton = document.querySelector(selector);
+                            if (sendButton && !sendButton.disabled) break;
+                        }}
 
                         if (sendButton && !sendButton.disabled) {{
                             console.log("Enviando mensaje con botón encontrado");
@@ -300,6 +526,14 @@ class JavaScriptInjector:
         // Ejecutar la función y retornar el resultado
         return sendMessageOptimized();
         """
+
+    @staticmethod
+    def _get_send_button_selectors_js() -> str:
+        """
+        Obtiene selectores del botón send en formato JavaScript
+        """
+        send_selectors = WhatsAppConstants.get_selectors('send_button')
+        return '[' + ', '.join([f"'{sel}'" for sel in send_selectors]) + ']'
 
     @staticmethod
     def create_caption_writer_script(caption_text: str) -> str:
